@@ -202,6 +202,12 @@ app.post('/api/sync-external', async (req, res) => {
       Extrae los incidentes válidos y devuélvelos estrictamente estructurados conforme al esquema JSON solicitado.
       Filtra y extrae solo incidentes reales con ubicaciones específicas en Caracas.
       Asegúrate de mapear el título descriptivo corto generado en "title" y el enlace de origen exacto en "source_url".
+      
+      IMPORTANTE:
+      - Solo mapea enlaces web (source_url) que sean reales, verídicos y provengan directamente de portales de noticias o tweets del texto analizado.
+      - Prohibido generar o inventar enlaces ficticios (como example.com, twitter.com/user, urls genéricas de periódicos sin el artículo, etc.).
+      - Si el reporte no posee una URL real y específica en el texto analizado, deja el campo "source_url" vacío/nulo.
+      
       Si no se describen incidentes válidos en el texto, devuelve un arreglo vacío [].
     `;
 

@@ -663,21 +663,42 @@
                 `).join('');
             }
 
-            // Separar y formatear múltiples URLs si fueron fusionadas
+            // Generar enlaces de fuentes y buscador automatizado de Google Noticias
             let sourcesHTML = '';
+            const searchQuery = `terremoto caracas ${r.title || r.type} ${r.location_text}`;
+            const googleNewsUrl = `https://news.google.com/search?q=${encodeURIComponent(searchQuery)}&hl=es-419&gl=VE&ceid=VE:es`;
+
+            sourcesHTML = `
+                <div class="meta-item" style="grid-column: span 2; margin-top: 0.25rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
+                    📰 <strong>Noticias:</strong> 
+                    <a href="${googleNewsUrl}" target="_blank" style="color: var(--color-success); text-decoration: underline; font-weight: 600; margin-right: 0.5rem;">
+                        [Buscar en Google Noticias]
+                    </a>
+            `;
+
             if (r.source_url) {
                 const urls = r.source_url.split(' | ');
-                sourcesHTML = `
-                    <div class="meta-item" style="grid-column: span 2; margin-top: 0.25rem;">
-                        🔗 <strong>Fuente(s):</strong> 
-                        ${urls.map((url, idx) => `
-                            <a href="${escapeHTML(url)}" target="_blank" style="color: var(--color-info); text-decoration: underline; margin-right: 0.6rem; font-weight: 600;">
-                                [Enlace ${idx + 1}]
+                // Filtrar URLs ficticias
+                const validUrls = urls.filter(url => 
+                    url.startsWith('http') && 
+                    !url.includes('example.com') && 
+                    !url.includes('twitter.com/user/status') && 
+                    !url.includes('placeholder.com')
+                );
+
+                if (validUrls.length > 0) {
+                    sourcesHTML += `
+                        <span style="color: var(--text-secondary); font-size: 0.75rem;">| Fuentes:</span>
+                        ${validUrls.map((url, idx) => `
+                            <a href="${escapeHTML(url)}" target="_blank" style="color: var(--color-info); text-decoration: underline; font-weight: 600;">
+                                [Fuente ${idx + 1}]
                             </a>
                         `).join('')}
-                    </div>
-                `;
+                    `;
+                }
             }
+
+            sourcesHTML += `</div>`;
 
             return `
                 <div class="report-card">
