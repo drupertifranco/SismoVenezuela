@@ -4,11 +4,11 @@ FROM node:20-alpine
 # Definir el directorio de trabajo
 WORKDIR /app
 
-# Copiar archivos de dependencias
-COPY package*.json ./
+# Copiar archivo de dependencias
+COPY package.json ./
 
 # Instalar solo las dependencias de producción
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 # Copiar el código fuente y el archivo SQL del esquema
 COPY index.js migrate.js schema.sql ./
