@@ -1,10 +1,10 @@
 -- ========================================================
 -- Capa Backend Google Cloud SQL (PostgreSQL) - Catástrofe Caracas
+-- Base de Datos: emergencia_ccs
 -- ========================================================
 
 -- 1. EXTENSIONES REQUERIDAS
--- Habilita búsquedas difusas para nombres de desaparecidos
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pg_trgm; -- Habilita similitud trigram para búsquedas difusas y de-duplicación
 
 -- 2. ENUMS DE APLICACIÓN
 CREATE TYPE incident_type AS ENUM ('desaparecido', 'emergencia_medica', 'rescate_estructural', 'suministros');
@@ -49,104 +49,59 @@ CREATE INDEX idx_missing_persons_name_trgm ON public.missing_persons USING gin (
 -- ========================================================
 -- SEGURIDAD A NIVEL DE FILAS (RLS) EN CLOUD SQL
 -- ========================================================
--- En Cloud SQL PostgreSQL, al no contar con el middleware automático de Supabase,
--- la seguridad se refuerza utilizando variables de sesión de aplicación.
 -- El backend (Cloud Run) ejecutará: "SET LOCAL app.role = 'authenticated'" para rescatistas.
 
--- Habilitar RLS en las tablas
 ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.missing_persons ENABLE ROW LEVEL SECURITY;
 
--- Aplicar RLS a todas las operaciones para asegurar que afecten a usuarios de aplicación
 ALTER TABLE public.reports FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.missing_persons FORCE ROW LEVEL SECURITY;
 
 -- -- POLÍTICAS PARA: reports -- --
-
--- SELECT: Acceso público (cualquier rol de sesión o anónimo)
-CREATE POLICY "Permitir select público en reports" 
-ON public.reports 
-FOR SELECT 
-USING (true);
-
--- INSERT: Acceso público (permite enviar reportes sin estar logueado)
-CREATE POLICY "Permitir insert público en reports" 
-ON public.reports 
-FOR INSERT 
-WITH CHECK (true);
-
--- UPDATE: Solo usuarios de la app con rol 'authenticated' (rescatistas/admin)
-CREATE POLICY "Permitir update a rescatistas autenticados" 
-ON public.reports 
-FOR UPDATE 
+CREATE POLICY "Permitir select público en reports" ON public.reports FOR SELECT USING (true);
+CREATE POLICY "Permitir insert público en reports" ON public.reports FOR INSERT WITH CHECK (true);
+CREATE POLICY "Permitir update a rescatistas autenticados" ON public.reports FOR UPDATE 
 USING (current_setting('app.role', true) = 'authenticated')
 WITH CHECK (current_setting('app.role', true) = 'authenticated');
-
--- DELETE: Solo usuarios de la app con rol 'authenticated' (rescatistas/admin)
-CREATE POLICY "Permitir delete a rescatistas autenticados" 
-ON public.reports 
-FOR DELETE 
+CREATE POLICY "Permitir delete a rescatistas autenticados" ON public.reports FOR DELETE 
 USING (current_setting('app.role', true) = 'authenticated');
 
-
 -- -- POLÍTICAS PARA: missing_persons -- --
-
--- SELECT: Acceso público para búsqueda de desaparecidos
-CREATE POLICY "Permitir select público en missing_persons" 
-ON public.missing_persons 
-FOR SELECT 
-USING (true);
-
--- INSERT: Acceso público
-CREATE POLICY "Permitir insert público en missing_persons" 
-ON public.missing_persons 
-FOR INSERT 
-WITH CHECK (true);
-
--- UPDATE: Solo rescatistas autenticados
-CREATE POLICY "Permitir update en missing_persons a rescatistas" 
-ON public.missing_persons 
-FOR UPDATE 
+CREATE POLICY "Permitir select público en missing_persons" ON public.missing_persons FOR SELECT USING (true);
+CREATE POLICY "Permitir insert público en missing_persons" ON public.missing_persons FOR INSERT WITH CHECK (true);
+CREATE POLICY "Permitir update en missing_persons a rescatistas" ON public.missing_persons FOR UPDATE 
 USING (current_setting('app.role', true) = 'authenticated')
 WITH CHECK (current_setting('app.role', true) = 'authenticated');
-
--- DELETE: Solo rescatistas autenticados
-CREATE POLICY "Permitir delete en missing_persons a rescatistas" 
-ON public.missing_persons 
-FOR DELETE 
+CREATE POLICY "Permitir delete en missing_persons a rescatistas" ON public.missing_persons FOR DELETE 
 USING (current_setting('app.role', true) = 'authenticated');
 
 -- ========================================================
 -- ROL Y PERMISOS DE CONEXIÓN PARA EL BACKEND (Cloud Run)
 -- ========================================================
-
--- Nota: Ejecutar este bloque con privilegios de superusuario (postgres) al configurar Cloud SQL.
--- CREATE ROLE app_user WITH LOGIN PASSWORD 'CAMBIA_ESTO_POR_UNA_CLAVE_SEGURA';
-
--- Otorgar permisos al rol de la aplicación en el esquema public
+-- Nota: Rol app_user creado mediante gcloud.
 GRANT USAGE ON SCHEMA public TO app_user;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO app_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO app_user;
 
 -- ========================================================
--- RPC ATÓMICO: PROCESAMIENTO DE UN SOLO PAYLOAD (TRANSACCIÓN ÚNICA)
+-- RPC ATÓMICO: PROCESAMIENTO CON DE-DUPLICACIÓN INTELIGENTE
 -- ========================================================
 
 /**
- * Inserta un reporte de emergencia y, si es necesario, los datos del desaparecido
- * en una sola llamada de red y dentro de una única transacción de base de datos.
- * Esto evita inserciones huérfanas en conexiones móviles 2G inestables.
- *
- * Se ejecuta bajo SECURITY DEFINER para asegurar la consistencia y el control transaccional.
+ * Inserta un reporte de emergencia. Si detecta que ya existe un reporte sin resolver
+ * del mismo tipo dentro de los 500m (GPS) o con similitud textual > 40% (pg_trgm),
+ * fusiona automáticamente la nueva información como una "Actualización" en el reporte existente.
+ * Esto optimiza el ancho de banda y evita duplicar tareas a las brigadas de rescate.
  */
 CREATE OR REPLACE FUNCTION public.submit_emergency_report(payload JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY DEFINER -- Ejecuta con permisos del dueño para eludir RLS en la inserción atómica inicial
+SECURITY DEFINER -- Elude RLS durante la ejecución atómica
 SET search_path = public
 AS $$
 DECLARE
     v_report_id UUID;
+    v_duplicate_id UUID;
     v_type TEXT;
     v_urgency TEXT;
     v_description TEXT;
@@ -158,6 +113,8 @@ DECLARE
     v_mp_name TEXT;
     v_mp_description TEXT;
     v_mp_last_seen TEXT;
+    v_mp_existing_id UUID;
+    v_status TEXT;
 BEGIN
     -- 1. Extracción de variables
     v_type := payload->>'type';
@@ -169,7 +126,7 @@ BEGIN
     v_contact_info := payload->>'contact_info';
     v_missing_person := payload->'missing_person';
 
-    -- 2. Validaciones obligatorias de campos
+    -- 2. Validaciones básicas obligatorias
     IF v_type IS NULL OR v_type = '' THEN
         RAISE EXCEPTION 'El campo "type" es requerido.';
     END IF;
@@ -183,38 +140,79 @@ BEGIN
         RAISE EXCEPTION 'El campo "location_text" es requerido.';
     END IF;
 
-    -- Validaciones de integridad para enums
+    -- Validaciones de enums
     IF NOT (v_type IN ('desaparecido', 'emergencia_medica', 'rescate_estructural', 'suministros')) THEN
         RAISE EXCEPTION 'Tipo de incidente inválido: %', v_type;
     END IF;
-
     IF NOT (v_urgency IN ('critico', 'alto', 'moderado')) THEN
         RAISE EXCEPTION 'Nivel de urgencia inválido: %', v_urgency;
     END IF;
 
-    -- 3. Insertar reporte principal
-    INSERT INTO public.reports (
-        type,
-        urgency,
-        description,
-        location_text,
-        lat,
-        lng,
-        contact_info
-    ) VALUES (
-        v_type::incident_type,
-        v_urgency::urgency_level,
-        v_description,
-        v_location_text,
-        v_lat,
-        v_lng,
-        v_contact_info
-    ) RETURNING id INTO v_report_id;
+    -- 3. Búsqueda de Duplicados en Reportes Activos (No Resueltos)
+    SELECT id INTO v_duplicate_id
+    FROM public.reports
+    WHERE type = v_type::incident_type
+      AND is_resolved = false
+      AND (
+        -- Criterio A: Distancia GPS menor a 500 metros (0.5 km) usando la fórmula Haversine
+        (v_lat IS NOT NULL AND v_lng IS NOT NULL AND lat IS NOT NULL AND lng IS NOT NULL AND
+         (6371 * acos(
+           LEAST(1.0, GREATEST(-1.0, 
+             cos(radians(v_lat)) * cos(radians(lat)) * cos(radians(lng) - radians(v_lng)) + 
+             sin(radians(v_lat)) * sin(radians(lat))
+           ))
+         )) < 0.5)
+        OR
+        -- Criterio B: Similitud del texto de descripción > 40%
+        (similarity(description, v_description) > 0.4)
+        OR
+        -- Criterio C: Similitud de la referencia de ubicación > 40%
+        (similarity(location_text, v_location_text) > 0.4)
+      )
+    ORDER BY created_at DESC
+    LIMIT 1;
 
-    -- 4. Insertar desaparecido en caso de corresponder
+    -- 4. Bifurcación: Fusión o Inserción
+    IF v_duplicate_id IS NOT NULL THEN
+        -- SE DETECTÓ UN DUPLICADO: Fusionamos la información en el reporte existente
+        v_report_id := v_duplicate_id;
+        v_status := 'merged';
+
+        UPDATE public.reports
+        SET description = description || E'\n\n[Actualización ' || to_char(timezone('utc', now()), 'YYYY-MM-DD HH24:MI:SS') || ' UTC]: ' || v_description,
+            contact_info = CASE 
+                WHEN v_contact_info IS NOT NULL AND v_contact_info != '' THEN 
+                    COALESCE(contact_info, '') || ' | ' || v_contact_info
+                ELSE contact_info 
+            END
+        WHERE id = v_duplicate_id;
+
+    ELSE
+        -- NO HAY DUPLICADOS: Insertar nuevo reporte
+        v_status := 'created';
+        INSERT INTO public.reports (
+            type,
+            urgency,
+            description,
+            location_text,
+            lat,
+            lng,
+            contact_info
+        ) VALUES (
+            v_type::incident_type,
+            v_urgency::urgency_level,
+            v_description,
+            v_location_text,
+            v_lat,
+            v_lng,
+            v_contact_info
+        ) RETURNING id INTO v_report_id;
+    END IF;
+
+    -- 5. Procesamiento de Persona Desaparecida
     IF v_type = 'desaparecido' OR v_missing_person IS NOT NULL THEN
         IF v_missing_person IS NULL THEN
-            RAISE EXCEPTION 'Se requiere el objeto "missing_person" para incidentes de tipo desaparecido.';
+            RAISE EXCEPTION 'Se requiere el nodo "missing_person" para incidentes de tipo desaparecido.';
         END IF;
 
         v_mp_name := v_missing_person->>'full_name';
@@ -222,26 +220,37 @@ BEGIN
         v_mp_last_seen := v_missing_person->>'last_seen_location';
 
         IF v_mp_name IS NULL OR v_mp_name = '' THEN
-            RAISE EXCEPTION 'El campo "missing_person.full_name" es requerido.';
+            RAISE EXCEPTION 'El campo "missing_person.full_name" es obligatorio.';
         END IF;
 
-        INSERT INTO public.missing_persons (
-            report_id,
-            full_name,
-            physical_description,
-            last_seen_location
-        ) VALUES (
-            v_report_id,
-            v_mp_name,
-            v_mp_description,
-            v_mp_last_seen
-        );
+        -- Si fue fusionado (merged), verificamos que la persona no esté registrada previamente
+        IF v_status = 'merged' THEN
+            SELECT id INTO v_mp_existing_id
+            FROM public.missing_persons
+            WHERE report_id = v_report_id
+              AND similarity(full_name, v_mp_name) > 0.6;
+        END IF;
+
+        -- Insertamos sólo si no existía previamente la persona bajo este reporte
+        IF v_mp_existing_id IS NULL THEN
+            INSERT INTO public.missing_persons (
+                report_id,
+                full_name,
+                physical_description,
+                last_seen_location
+            ) VALUES (
+                v_report_id,
+                v_mp_name,
+                v_mp_description,
+                v_mp_last_seen
+            );
+        END IF;
     END IF;
 
-    -- 5. Respuesta exitosa
     RETURN jsonb_build_object(
         'success', true,
-        'report_id', v_report_id
+        'report_id', v_report_id,
+        'status', v_status
     );
 END;
 $$;

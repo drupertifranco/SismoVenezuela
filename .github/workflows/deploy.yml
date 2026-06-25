@@ -56,4 +56,5 @@ jobs:
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend:${{ github.sha }}
           env_vars: |
             DATABASE_URL=${{ secrets.DATABASE_URL }}
-          flags: '--allow-unauthenticated' # Requerido para recibir reportes públicos anónimos
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+          flags: '--allow-unauthenticated --add-cloudsql-instances=praxis-ia-498305:us-central1:praxis-db'
