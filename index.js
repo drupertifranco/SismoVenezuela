@@ -978,13 +978,18 @@ app.post('/api/sync-external', async (req, res) => {
     // Autenticación inteligente: Usa API Key local o Vertex AI en GCP (Enterprise)
     if (process.env.GEMINI_API_KEY) {
       ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    } else {
+    } else if (process.env.GCP_PROJECT_ID) {
       // Configurar variables necesarias para que el SDK de GenAI active el modo Vertex Enterprise
       process.env.GOOGLE_GENAI_USE_ENTERPRISE = 'true';
       process.env.GOOGLE_CLOUD_PROJECT = process.env.GCP_PROJECT_ID || 'praxis-ia-498305';
       process.env.GOOGLE_CLOUD_LOCATION = 'us-central1';
-      
       ai = new GoogleGenAI({}); // Inicialización vacía para cargar de forma automática Vertex AI
+    } else {
+      console.error('sync-external: ni GEMINI_API_KEY ni GCP_PROJECT_ID están configurados.');
+      return res.status(503).json({
+        success: false,
+        error: 'El servicio de IA no está configurado. Contacta al administrador para agregar GEMINI_API_KEY en la configuración del servidor.'
+      });
     }
 
     console.log('Paso 1: Rastreo web con Google Search Grounding (Texto libre)...');
@@ -1109,7 +1114,7 @@ app.post('/api/sync-external', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error crítico en sync-external:', error.message);
+    console.error('Error crítico en sync-external:', error.message, error.stack);
     res.status(500).json({ success: false, error: error.message });
   }
 });
