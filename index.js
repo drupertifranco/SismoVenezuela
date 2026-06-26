@@ -1032,26 +1032,37 @@ app.post('/api/sync-external', async (req, res) => {
 
     console.log('Paso 1: Rastreo web con Google Search Grounding (Texto libre)...');
 
-    const searchPrompt = `
-      Busca reportes recientes en Twitter, X y portales de noticias o periódicos sobre emergencias médicas, 
-      solicitudes de suministros, colapsos de estructuras, fallas de conectividad/internet o personas desaparecidas causadas por el reciente 
-      terremoto de magnitud 7.2 en Venezuela.
-      Encuentra incidentes específicos con sus descripciones, ubicaciones físicas detalladas, el estado federal de Venezuela (ej. Distrito Capital, Miranda, Aragua, Anzoátegui, Carabobo, etc.), coordenadas 
-      de GPS si se mencionan y nombres de personas desaparecidas.
-      Es obligatorio extraer el título descriptivo corto del suceso y la URL o enlace web exacto (link) de donde 
-      obtienes la información (fuente de la noticia o tuit).
-      Escribe un reporte de texto detallado resumiendo todos los incidentes con sus respectivos títulos y links de fuente.
-    `;
+    const searchPrompt = `Busca reportes recientes en noticias y redes sociales sobre emergencias médicas,
+solicitudes de suministros, colapsos de estructuras, fallas de conectividad o personas desaparecidas
+causadas por el terremoto de magnitud 7.2 en Venezuela.
+Para cada incidente encontrado indica: título descriptivo, ubicación en Venezuela, descripción detallada y URL de la fuente.
+Escribe un reporte de texto con todos los incidentes encontrados.`;
 
-    const searchResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: searchPrompt,
-      config: {
-        tools: [{ googleSearch: {} }] // Grounding activo en la búsqueda libre
+    let rawContent = '';
+    try {
+      const searchResponse = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: searchPrompt,
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
+      });
+      rawContent = searchResponse.text || '';
+    } catch (searchErr) {
+      console.error('Error en búsqueda con Google Grounding:', searchErr.message);
+      // Fallback: intentar sin grounding
+      try {
+        const fallbackResponse = await ai.models.generateContent({
+          model: 'gemini-2.0-flash',
+          contents: searchPrompt
+        });
+        rawContent = fallbackResponse.text || '';
+      } catch (fallbackErr) {
+        console.error('Error en búsqueda fallback:', fallbackErr.message);
+        return res.json({ success: true, synchronized_records: 0, details: [], message: 'El servicio de búsqueda no está disponible temporalmente.' });
       }
-    });
+    }
 
-    const rawContent = searchResponse.text || '';
     if (!rawContent.trim()) {
       console.warn('La búsqueda web no devolvió contenido. Retornando sin sincronizar.');
       return res.json({ success: true, synchronized_records: 0, details: [] });
