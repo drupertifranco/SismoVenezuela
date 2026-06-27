@@ -2168,7 +2168,7 @@
 
     async function loadCollectionCenters() {
         try {
-            const res = await fetch(`${API_BASE}/api/collection-centers`);
+            const res = await fetch(`${API_BASE}/api/collection-centers?_t=${Date.now()}`);
             const responseData = await res.json();
 
             if (responseData.success) {
