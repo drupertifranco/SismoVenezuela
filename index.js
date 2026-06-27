@@ -481,7 +481,7 @@ ${truncatedHtml}`;
 
   const aiResponse = await ai.models.generateContent({
     model: 'gemini-2.5-flash',
-    contents: prompt,
+    contents: extractPrompt,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
@@ -1052,7 +1052,7 @@ Escribe un reporte de texto con todos los incidentes encontrados.`;
     let rawContent = '';
     try {
       const searchResponse = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-2.5-flash',
         contents: searchPrompt,
         config: {
           tools: [{ googleSearch: {} }]
@@ -1064,7 +1064,7 @@ Escribe un reporte de texto con todos los incidentes encontrados.`;
       // Fallback: intentar sin grounding
       try {
         const fallbackResponse = await ai.models.generateContent({
-          model: 'gemini-2.0-flash',
+          model: 'gemini-2.5-flash',
           contents: searchPrompt
         });
         rawContent = fallbackResponse.text || '';
@@ -1098,7 +1098,7 @@ ${truncatedContent}`;
     let parsedReports = [];
     try {
       const structureResponse = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-2.5-flash',
         contents: structurePrompt,
         config: {
           responseMimeType: 'application/json',

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SismoVenezuela - Red de apoyo y centros de acopio</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3QgeT0iMCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjEwLjY2IiBmaWxsPSIjRkNEMTE2Ii8+PHJlY3QgeT0iMTAuNjYiIHdpZHRoPSIzMiIgaGVpZ2h0PSIxMC42NiIgZmlsbD0iIzAwMzhBOCIvPjxyZWN0IHk9IjIxLjMzIiB3aWR0aD0iMzIiIGhlaWdodD0iMTAuNjciIGZpbGw9IiNDRTExMjYiLz48dGV4dCB4PSIxNiIgeT0iMjEiIGZvbnQtZmFtaWx5PSImYXBvcztJbXBhY3QmYXBvczssICZhcG9zO0FyaWFsIEJsYWNrJmFwb3M7LCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iOTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjRkZGRkZGIiBzdHJva2U9IiMwMDAwMDAiIHN0cm9rZS13aWR0aD0iMS41IiBwYWludC1vcmRlcj0ic3Ryb2tlIGZpbGwiPlNPUzwvdGV4dD48L3N2Zz4=">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         :root {
@@ -1719,6 +1720,16 @@
                 <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; line-height: 1.45;">
                     Últimos sismos registrados en la región de Venezuela por el Servicio Geológico de EE. UU. (USGS).
                 </p>
+                <!-- CONTENEDOR DE LA GRÁFICA -->
+                <div style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.75rem; margin-bottom: 1rem;">
+                    <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem; display: flex; justify-content: space-between;">
+                        <span>Tendencia de Magnitud (Últimos Eventos)</span>
+                        <span id="seismicChartSummary" style="color: var(--text-secondary); font-weight: normal; font-size: 0.7rem;">Cargando gráfica...</span>
+                    </div>
+                    <div style="position: relative; height: 160px; width: 100%;">
+                        <canvas id="seismicChartCanvas"></canvas>
+                    </div>
+                </div>
                 <div class="seismic-list" id="seismicList" style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 300px; overflow-y: auto; padding-right: 0.25rem;">
                     <div style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">Cargando sismos recientes...</div>
                 </div>
@@ -3100,6 +3111,101 @@
         );
     };
 
+    let seismicChartInstance = null;
+
+    function renderSeismicChart(events) {
+        const canvas = document.getElementById('seismicChartCanvas');
+        if (!canvas) return;
+
+        const summaryEl = document.getElementById('seismicChartSummary');
+        if (summaryEl) {
+            summaryEl.textContent = `${events.length} sismos registrados`;
+        }
+
+        const chronEvents = [...events].reverse();
+        const labels = chronEvents.map(e => {
+            const time = new Date(e.properties.time);
+            return time.toLocaleDateString('es-VE', { month: 'short', day: 'numeric' }) + ' ' + time.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+        });
+        const magnitudes = chronEvents.map(e => e.properties.mag);
+        const places = chronEvents.map(e => e.properties.place);
+
+        if (seismicChartInstance) {
+            seismicChartInstance.destroy();
+        }
+
+        const ctx = canvas.getContext('2d');
+        const gradient = ctx.createLinearGradient(0, 0, 0, 160);
+        gradient.addColorStop(0, 'rgba(239, 68, 68, 0.35)');
+        gradient.addColorStop(0.5, 'rgba(249, 115, 22, 0.15)');
+        gradient.addColorStop(1, 'rgba(234, 179, 8, 0.02)');
+
+        seismicChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Magnitud (M)',
+                    data: magnitudes,
+                    borderColor: '#ef4444',
+                    borderWidth: 2,
+                    pointBackgroundColor: chronEvents.map(e => {
+                        const m = e.properties.mag;
+                        if (m >= 5.0) return '#ef4444';
+                        if (m >= 4.0) return '#f97316';
+                        return '#eab308';
+                    }),
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 1,
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
+                    tension: 0.3,
+                    fill: true,
+                    backgroundColor: gradient
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: (context) => {
+                                const index = context[0].dataIndex;
+                                return places[index];
+                            },
+                            label: (context) => {
+                                return ` Magnitud: ${context.parsed.y.toFixed(1)} M`;
+                            }
+                        },
+                        backgroundColor: '#172033',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        borderWidth: 1,
+                        borderColor: '#d8e1ec',
+                        padding: 8,
+                        titleFont: { size: 10, weight: 'bold' },
+                        bodyFont: { size: 11 }
+                    }
+                },
+                scales: {
+                    x: { display: false },
+                    y: {
+                        min: 1.0,
+                        max: 8.0,
+                        grid: { color: 'rgba(0, 0, 0, 0.04)' },
+                        ticks: {
+                            font: { size: 9 },
+                            stepSize: 1,
+                            color: '#526175'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     // USGS Seismic Events Monitoring
     async function loadRecentSeismicEvents() {
         const seismicList = document.getElementById('seismicList');
@@ -3118,6 +3224,9 @@
             
             // Ordenar de forma descendente por hora del suceso
             const sortedEvents = data.features.sort((a, b) => b.properties.time - a.properties.time);
+            
+            // Renderizar gráfica
+            renderSeismicChart(sortedEvents);
             
             seismicList.innerHTML = sortedEvents.map(e => {
                 const props = e.properties;
