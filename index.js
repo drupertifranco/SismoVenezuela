@@ -1610,6 +1610,27 @@ app.get('/api/admin/cleanup-reimport', async (req, res) => {
 
 
 // Endpoint para forzar la limpieza de registros importados con prefijo hosp_mpc
+app.get('/api/admin/debug-db', async (req, res) => {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) return res.status(500).send('DATABASE_URL no definida.');
+  const pgPool = new pg.Pool({ connectionString });
+  let client;
+  try {
+    client = await pgPool.connect();
+    const reports = await client.query('SELECT id, type, title, source_url, location_text, is_resolved FROM public.reports;');
+    const persons = await client.query('SELECT id, report_id, full_name FROM public.missing_persons;');
+    return res.json({
+      reports: reports.rows,
+      persons: persons.rows
+    });
+  } catch (err) {
+    return res.status(500).send(err.message);
+  } finally {
+    if (client) client.release();
+    await pgPool.end();
+  }
+});
+
 app.get('/api/admin/force-cleanup', async (req, res) => {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
