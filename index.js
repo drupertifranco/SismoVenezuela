@@ -1391,8 +1391,12 @@ app.get('/personas/:id', async (req, res) => {
     }
 
     const p = result.rows[0];
-    const title = `🚨 BUSQUEDA ACTIVA: Localizar a ${p.full_name} | SismoVenezuela`;
-    const description = `Ayúdanos a localizar a ${p.full_name}. Visto por última vez en: ${p.location_text || 'Área afectada'}, Estado ${p.state || 'Venezuela'}. Comparte cualquier información para ayudar.`;
+    const fullName = (!p.full_name || p.full_name === 'null') ? 'Persona no identificada' : p.full_name;
+    const locationText = (!p.location_text || p.location_text === 'null') ? 'Área afectada' : p.location_text;
+    const stateText = (!p.state || p.state === 'null') ? 'Venezuela' : p.state;
+
+    const title = `🚨 BUSQUEDA ACTIVA: Localizar a ${fullName} | SismoVenezuela`;
+    const description = `Ayúdanos a localizar a ${fullName}. Visto por última vez en: ${locationText}, Estado ${stateText}. Comparte cualquier información para ayudar.`;
     const canonicalUrl = `https://ayudavenezuela.technolink.tech/personas/${id}`;
 
     // 3. Leer el archivo HTML base
