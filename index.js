@@ -1609,6 +1609,46 @@ app.get('/api/admin/cleanup-reimport', async (req, res) => {
 });
 
 
+// Endpoint para forzar la limpieza de registros importados con prefijo hosp_mpc
+app.get('/api/admin/force-cleanup', async (req, res) => {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    return res.status(500).send('DATABASE_URL no definida.');
+  }
+
+  const pgPool = new pg.Pool({ connectionString });
+  let client;
+  try {
+    client = await pgPool.connect();
+    await client.query('BEGIN;');
+
+    // 1. Borrar todas las personas asociadas a los reportes con hosp_mpc en source_url
+    await client.query(`
+      DELETE FROM public.missing_persons 
+      WHERE report_id IN (
+        SELECT id FROM public.reports 
+        WHERE source_url LIKE '%hosp_mpc%'
+      );
+    `);
+
+    // 2. Borrar los reportes maestros
+    await client.query(`
+      DELETE FROM public.reports 
+      WHERE source_url LIKE '%hosp_mpc%';
+    `);
+
+    await client.query('COMMIT;');
+    return res.status(200).send('Limpieza forzada completada exitosamente.');
+  } catch (err) {
+    if (client) await client.query('ROLLBACK;');
+    return res.status(500).send(`Error en limpieza forzada: ${err.message}`);
+  } finally {
+    if (client) client.release();
+    await pgPool.end();
+  }
+});
+
+
 // ============================================================================
 // AI AGENT READY & DISCOVERY ENDPOINTS (RFC 8288, RFC 9727, RFC 9728, WebMCP)
 // ============================================================================
