@@ -1,4 +1,4 @@
-# AI Agent Registration & Authentication Instructions
+# Authentication
 
 Welcome to SismoVenezuela. We support programmatic access for AI agents to help during the earthquake crisis in Venezuela.
 
