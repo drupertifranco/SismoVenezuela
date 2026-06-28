@@ -2808,13 +2808,21 @@
             
             let missingBox = '';
             if (r.missing_persons && r.missing_persons.length > 0) {
-                missingBox = r.missing_persons.map(mp => `
-                    <div class="missing-box">
-                        <h4>🔍 Persona Desaparecida: ${escapeHTML(mp.full_name)}</h4>
-                        ${mp.physical_description ? `<p><strong>Físico:</strong> ${escapeHTML(mp.physical_description)}</p>` : ''}
-                        ${mp.last_seen_location ? `<p><strong>Visto en:</strong> ${escapeHTML(mp.last_seen_location)}</p>` : ''}
-                    </div>
-                `).join('');
+                const filtered = r.missing_persons.filter(mp => {
+                    if (r.missing_persons.length === 1 && r.title && r.title.toLowerCase().includes(mp.full_name.toLowerCase())) {
+                        return false;
+                    }
+                    return true;
+                });
+                if (filtered.length > 0) {
+                    missingBox = filtered.map(mp => `
+                        <div class="missing-box">
+                            <h4>🔍 Persona Desaparecida: ${escapeHTML(mp.full_name)}</h4>
+                            ${mp.physical_description ? `<p><strong>Físico:</strong> ${escapeHTML(mp.physical_description)}</p>` : ''}
+                            ${mp.last_seen_location ? `<p><strong>Visto en:</strong> ${escapeHTML(mp.last_seen_location)}</p>` : ''}
+                        </div>
+                    `).join('');
+                }
             }
 
             // Generar enlaces de fuentes y buscador automatizado de Google Noticias
