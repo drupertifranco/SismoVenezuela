@@ -1687,7 +1687,7 @@ BEGIN
           AND (
             ($1 != ''desaparecido'' AND (
                 ($2 IS NOT NULL AND $3 IS NOT NULL AND lat IS NOT NULL AND lng IS NOT NULL AND
-                 (6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) + sin(radians($2)) * sin(radians(lat))))) < 0.5)
+                 (6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) + sin(radians($2)) * sin(radians(lat))))) < 0.5))
                 OR (similarity(description, $4) > 0.4)
                 OR (similarity(location_text, $5) > 0.4)
             ))
