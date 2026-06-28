@@ -22,4 +22,4 @@ EXPOSE 8080
 ENV NODE_ENV=production
 
 # El comando de inicio ejecuta las migraciones antes de levantar el servidor Express
-CMD ["sh", "-c", "npm run migrate && npm start"]
+CMD ["npm", "start"]

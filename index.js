@@ -1534,6 +1534,41 @@ app.get('/personas/:id', async (req, res) => {
 });
 
 
+// Endpoint de administración para ejecutar migraciones bajo demanda sin colgar el arranque
+app.get('/api/admin/migrate', async (req, res) => {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    return res.status(500).send('DATABASE_URL no definida.');
+  }
+
+  const pgPool = new pg.Pool({ connectionString });
+  let client;
+  try {
+    client = await pgPool.connect();
+    await client.query("SET lock_timeout = '20s'");
+
+    // Terminar otras conexiones activas de la base de datos para liberar bloqueos
+    await client.query(`
+      SELECT pg_terminate_backend(pid)
+      FROM pg_stat_activity
+      WHERE pid <> pg_backend_pid()
+        AND datname = current_database();
+    `);
+
+    const sqlPath = path.join(__dirname, 'database', 'schema.sql');
+    const sql = fs.readFileSync(sqlPath, 'utf8');
+    await client.query(sql);
+
+    return res.status(200).send('Migración completada exitosamente.');
+  } catch (err) {
+    return res.status(500).send(`Error en migración: ${err.message}`);
+  } finally {
+    if (client) client.release();
+    await pgPool.end();
+  }
+});
+
+
 // ============================================================================
 // AI AGENT READY & DISCOVERY ENDPOINTS (RFC 8288, RFC 9727, RFC 9728, WebMCP)
 // ============================================================================
