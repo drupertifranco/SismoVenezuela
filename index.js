@@ -249,20 +249,20 @@ function normalizeImportedMissingPerson(raw) {
 async function findExistingMissingPerson(client, person) {
   const result = await client.query(
     `SELECT r.id, r.source_url, mp.full_name, r.location_text,
-            similarity(mp.full_name, $1) AS name_score,
-            similarity(r.location_text, $2) AS location_score
+            similarity(mp.full_name, $1::text) AS name_score,
+            similarity(r.location_text, $2::text) AS location_score
      FROM public.missing_persons mp
      JOIN public.reports r ON r.id = mp.report_id
      WHERE r.type = 'desaparecido'
        AND r.is_resolved = false
        AND (
-         similarity(mp.full_name, $1) > 0.72
+         similarity(mp.full_name, $1::text) > 0.72
          OR (
-           similarity(mp.full_name, $1) > 0.58
-           AND similarity(r.location_text, $2) > 0.42
+           similarity(mp.full_name, $1::text) > 0.58
+           AND similarity(r.location_text, $2::text) > 0.42
          )
        )
-     ORDER BY GREATEST(similarity(mp.full_name, $1), similarity(r.location_text, $2)) DESC,
+     ORDER BY GREATEST(similarity(mp.full_name, $1::text), similarity(r.location_text, $2::text)) DESC,
               r.created_at DESC
      LIMIT 1;`,
     [person.fullName, person.locationText]
