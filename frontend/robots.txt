@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/resolve
+
+Sitemap: https://ayudavenezuela.technolink.tech/sitemap.xml

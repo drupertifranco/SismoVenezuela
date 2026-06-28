@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import { spawn } from 'child_process';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -1322,6 +1323,98 @@ app.get('/pfif', async (req, res) => {
   } catch (error) {
     console.error('Error en endpoint /pfif:', error.message);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint dinámico para el mapa de sitio (Sitemap.xml)
+app.get('/sitemap.xml', async (req, res) => {
+  res.header('Content-Type', 'application/xml');
+  
+  // Enlaces estáticos principales
+  const urls = [
+    'https://ayudavenezuela.technolink.tech/'
+  ];
+
+  try {
+    // Buscar personas desaparecidas activas de la base de datos para agregarlas al sitemap
+    const result = await pool.query(
+      `SELECT id FROM public.missing_persons LIMIT 200;`
+    );
+    
+    result.rows.forEach(row => {
+      urls.push(`https://ayudavenezuela.technolink.tech/personas/${row.id}`);
+    });
+  } catch (err) {
+    console.error('Error al generar sitemap dinámico:', err.message);
+  }
+
+  // Construir el XML de sitemap estándar
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+  
+  urls.forEach(url => {
+    xml += `  <url>\n`;
+    xml += `    <loc>${url}</loc>\n`;
+    xml += `    <changefreq>hourly</changefreq>\n`;
+    xml += `    <priority>${url.endsWith('/') ? '1.0' : '0.8'}</priority>\n`;
+    xml += `  </url>\n`;
+  });
+  
+  xml += `</urlset>`;
+  res.send(xml);
+});
+
+// Ruta para cargar una persona específica con SEO dinámico para WhatsApp/Buscadores
+app.get('/personas/:id', async (req, res) => {
+  const { id } = req.params;
+  const htmlPath = path.join(__dirname, 'frontend', 'Reporte Desaparecidos Venezuela.dc.html');
+  
+  try {
+    // 1. Validar UUID para proteger contra inyecciones
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return res.status(400).send('ID de persona inválido.');
+    }
+
+    // 2. Buscar los datos de la persona de la base de datos
+    const result = await pool.query(
+      `SELECT mp.full_name, mp.physical_description, r.location_text, r.state 
+       FROM public.missing_persons mp
+       JOIN public.reports r ON mp.report_id = r.id
+       WHERE mp.id = $1 LIMIT 1;`,
+      [id]
+    );
+
+    // Si no se encuentra, servir el HTML base normalmente
+    if (result.rows.length === 0) {
+      return res.sendFile(htmlPath);
+    }
+
+    const p = result.rows[0];
+    const title = `🚨 BUSQUEDA ACTIVA: Localizar a ${p.full_name} | SismoVenezuela`;
+    const description = `Ayúdanos a localizar a ${p.full_name}. Visto por última vez en: ${p.location_text || 'Área afectada'}, Estado ${p.state || 'Venezuela'}. Comparte cualquier información para ayudar.`;
+    const canonicalUrl = `https://ayudavenezuela.technolink.tech/personas/${id}`;
+
+    // 3. Leer el archivo HTML base
+    let html = fs.readFileSync(htmlPath, 'utf8');
+
+    // 4. Reemplazar las etiquetas básicas y de Open Graph dinámicamente antes de servir el archivo
+    html = html
+      .replace(/<title>.*?<\/title>/g, `<title>${title}</title>`)
+      .replace(/<meta name="description" content=".*?">/g, `<meta name="description" content="${description}">`)
+      .replace(/<link rel="canonical" href=".*?">/g, `<link rel="canonical" href="${canonicalUrl}">`)
+      .replace(/<meta property="og:title" content=".*?">/g, `<meta property="og:title" content="${title}">`)
+      .replace(/<meta property="og:description" content=".*?">/g, `<meta property="og:description" content="${description}">`)
+      .replace(/<meta property="og:url" content=".*?">/g, `<meta property="og:url" content="${canonicalUrl}">`)
+      .replace(/<meta name="twitter:title" content=".*?">/g, `<meta name="twitter:title" content="${title}">`)
+      .replace(/<meta name="twitter:description" content=".*?">/g, `<meta name="twitter:description" content="${description}">`);
+
+    // 5. Enviar el HTML modificado e indexable al vuelo
+    res.send(html);
+
+  } catch (error) {
+    console.error('Error al inyectar SEO dinámico:', error.message);
+    res.sendFile(htmlPath); // Fallback: servir archivo estático base
   }
 });
 
