@@ -224,10 +224,11 @@ function createImportSummary(received) {
 async function importMissingPersonsBatch(rawItems, options = {}) {
   const includeResolved = options.includeResolved === true;
   const source = options.source || MISSING_PERSONS_SOURCE_NAME;
-  const client = await pool.connect();
   const summary = createImportSummary(rawItems.length);
+  let client;
 
   try {
+    client = await pool.connect();
     for (const rawItem of rawItems) {
       const person = normalizeImportedMissingPerson(rawItem);
 
@@ -302,7 +303,9 @@ async function importMissingPersonsBatch(rawItems, options = {}) {
 
     return { source, ...summary };
   } finally {
-    client.release();
+    if (client) {
+      client.release();
+    }
   }
 }
 
@@ -983,9 +986,10 @@ app.get('/api/reports', async (req, res) => {
 // Endpoint 3: Marcar reporte como resuelto (Acceso Protegido por RLS de sesión)
 app.patch('/api/reports/:id/resolve', async (req, res) => {
   const { id } = req.params;
-  const client = await pool.connect();
+  let client;
 
   try {
+    client = await pool.connect();
     await client.query('BEGIN;');
     await client.query("SET LOCAL app.role = 'authenticated';");
 
@@ -1009,14 +1013,22 @@ app.patch('/api/reports/:id/resolve', async (req, res) => {
       data: updateResult.rows[0]
     });
   } catch (error) {
-    await client.query('ROLLBACK;');
+    if (client) {
+      try {
+        await client.query('ROLLBACK;');
+      } catch (rollbackErr) {
+        console.error('Error al realizar rollback:', rollbackErr.message);
+      }
+    }
     console.error('Error al marcar reporte como resuelto:', error.message);
     return res.status(403).json({
       success: false,
       error: error.message
     });
   } finally {
-    client.release();
+    if (client) {
+      client.release();
+    }
   }
 });
 
