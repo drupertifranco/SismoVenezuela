@@ -206,6 +206,9 @@ BEGIN
     v_contact_info := payload->>'contact_info';
     v_state := payload->>'state';
     v_missing_person := payload->'missing_person';
+    IF v_missing_person IS NOT NULL THEN
+        v_mp_name := v_missing_person->>'full_name';
+    END IF;
 
     -- 2. Validaciones básicas obligatorias
     IF v_type IS NULL OR v_type = '' THEN
@@ -231,26 +234,24 @@ BEGIN
 
     -- 3. Búsqueda de Duplicados en Reportes Activos (No Resueltos)
     SELECT id INTO v_duplicate_id
-    FROM public.reports
+    FROM public.reports r
     WHERE type = v_type::incident_type
       AND is_resolved = false
       AND (
-        -- Criterio A: Distancia GPS menor a 500 metros (0.5 km) usando la fórmula Haversine
-        (v_lat IS NOT NULL AND v_lng IS NOT NULL AND lat IS NOT NULL AND lng IS NOT NULL AND
-         (6371 * acos(
-           LEAST(1.0, GREATEST(-1.0, 
-             cos(radians(v_lat)) * cos(radians(lat)) * cos(radians(lng) - radians(v_lng)) + 
-             sin(radians(v_lat)) * sin(radians(lat))
-           ))
-         )) < 0.5)
+        (v_type != 'desaparecido' AND (
+            (v_lat IS NOT NULL AND v_lng IS NOT NULL AND lat IS NOT NULL AND lng IS NOT NULL AND
+             (6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(v_lat)) * cos(radians(lat)) * cos(radians(lng) - radians(v_lng)) + sin(radians(v_lat)) * sin(radians(lat))))) < 0.5)
+            OR (similarity(description, v_description) > 0.4)
+            OR (similarity(location_text, v_location_text) > 0.4)
+        ))
         OR
-        -- Criterio B: Similitud del texto de descripción > 40%
-        (similarity(description, v_description) > 0.4)
-        OR
-        -- Criterio C: Similitud de la referencia de ubicación > 40%
-        (similarity(location_text, v_location_text) > 0.4)
+        (v_type = 'desaparecido' AND v_mp_name IS NOT NULL AND EXISTS (
+            SELECT 1 FROM public.missing_persons mp
+            WHERE mp.report_id = r.id
+              AND similarity(mp.full_name, v_mp_name) > 0.72
+        ))
       )
-    ORDER BY created_at DESC
+    ORDER BY r.created_at DESC
     LIMIT 1;
 
     -- 4. Bifurcación: Fusión o Inserción
