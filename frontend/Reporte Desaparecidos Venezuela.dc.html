@@ -2089,6 +2089,10 @@
                     <span id="reportsCount" class="counter-pill">Cargando...</span>
                 </div>
                 
+                <div style="margin-bottom: 0.75rem;">
+                    <input type="text" id="incidentsSearchInput" placeholder="🔍 Buscar por nombre, cédula, hospital o departamento..." style="width: 100%; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--border-color); font-size: 0.8rem; background: var(--card-bg); color: var(--text-primary);">
+                </div>
+                
                 <div class="dashboard-actions">
                     <button class="filter-chip active" data-filter="all">Todos</button>
                     <button class="filter-chip" data-filter="desaparecido">Desaparecidos</button>
@@ -2163,6 +2167,8 @@
     let currentFilter = 'all';
     let collectionCenters = [];
     let centerSearchQuery = '';
+    let allLoadedReports = [];
+    let incidentsSearchQuery = '';
     let userPosition = null;
     let centersMap = null;
     let centersLayer = null;
@@ -2269,6 +2275,12 @@
     centerSearchInput.addEventListener('input', () => {
         centerSearchQuery = centerSearchInput.value;
         renderCollectionCenters();
+    });
+
+    const incidentsSearchInput = document.getElementById('incidentsSearchInput');
+    incidentsSearchInput.addEventListener('input', () => {
+        incidentsSearchQuery = incidentsSearchInput.value;
+        applyReportsSearchAndFilter();
     });
 
     collectionCenterForm.addEventListener('submit', async (e) => {
@@ -2776,9 +2788,8 @@
             const responseData = await res.json();
             
             if (responseData.success) {
-                renderReports(responseData.data);
-                reportsCount.textContent = `${responseData.count} activos`;
-                heroReportsCount.textContent = responseData.count;
+                allLoadedReports = responseData.data;
+                applyReportsSearchAndFilter();
             } else {
                 reportsCount.textContent = 'Error';
                 heroReportsCount.textContent = '--';
@@ -2789,6 +2800,37 @@
             reportsCount.textContent = 'Sin Conexión';
             heroReportsCount.textContent = '--';
         }
+    }
+
+    // Filtrar localmente por búsqueda
+    function applyReportsSearchAndFilter() {
+        const query = incidentsSearchQuery.toLowerCase().trim();
+        let filtered = allLoadedReports;
+        
+        if (query) {
+            filtered = allLoadedReports.filter(r => {
+                const titleMatch = r.title && r.title.toLowerCase().includes(query);
+                const descMatch = r.description && r.description.toLowerCase().includes(query);
+                const locMatch = r.location_text && r.location_text.toLowerCase().includes(query);
+                const contactMatch = r.contact_info && r.contact_info.toLowerCase().includes(query);
+                
+                let mpMatch = false;
+                if (r.missing_persons && r.missing_persons.length > 0) {
+                    mpMatch = r.missing_persons.some(mp => {
+                        const nameMatch = mp.full_name && mp.full_name.toLowerCase().includes(query);
+                        const physMatch = mp.physical_description && mp.physical_description.toLowerCase().includes(query);
+                        const lastSeenMatch = mp.last_seen_location && mp.last_seen_location.toLowerCase().includes(query);
+                        return nameMatch || physMatch || lastSeenMatch;
+                    });
+                }
+                
+                return titleMatch || descMatch || locMatch || contactMatch || mpMatch;
+            });
+        }
+        
+        renderReports(filtered);
+        reportsCount.textContent = `${filtered.length} activos`;
+        heroReportsCount.textContent = filtered.length;
     }
 
     // Renderizar Reportes en Pantalla
