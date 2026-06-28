@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import { spawn } from 'child_process';
 import fs from 'fs';
+import XLSX from 'xlsx';
 
 dotenv.config();
 
@@ -2015,7 +2016,228 @@ app.get('/.well-known/agent-skills/index.json', (req, res) => {
 });
 
 
+// Helper to convert JSON array to CSV string
+function jsonToCSV(jsonArray) {
+  if (!Array.isArray(jsonArray) || jsonArray.length === 0) return '';
+  const headers = Object.keys(jsonArray[0]);
+  const csvRows = [headers.join(',')];
+  
+  for (const row of jsonArray) {
+    const values = headers.map(header => {
+      const val = row[header];
+      if (val === null || val === undefined) return '';
+      // Escape double quotes and wrap in double quotes if there are commas, newlines or quotes
+      const stringified = String(val).replace(/"/g, '""');
+      if (stringified.includes(',') || stringified.includes('\n') || stringified.includes('\r') || stringified.includes('"')) {
+        return `"${stringified}"`;
+      }
+      return stringified;
+    });
+    csvRows.push(values.join(','));
+  }
+  return csvRows.join('\n');
+}
+
+// Endpoint público: Exportar centros de acopio en CSV
+app.get('/api/public/centers/csv', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, name, location_text, lat, lng, supplies, schedule, contact_info, capacity_status, is_active, created_at
+      FROM public.collection_centers
+      ORDER BY created_at DESC;
+    `);
+    const csv = jsonToCSV(result.rows);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename=centers.csv');
+    return res.status(200).send(csv);
+  } catch (error) {
+    console.error('Error al exportar centros en CSV:', error.message);
+    return res.status(500).send(`Error: ${error.message}`);
+  }
+});
+
+// Endpoint público: Exportar puntos de ayuda (incidentes no resueltos) en CSV
+app.get('/api/public/help-points/csv', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, type, urgency, title, source_url, description, location_text, lat, lng, contact_info, state, is_resolved, created_at
+      FROM public.reports
+      WHERE is_resolved = false
+      ORDER BY created_at DESC;
+    `);
+    const csv = jsonToCSV(result.rows);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename=help-points.csv');
+    return res.status(200).send(csv);
+  } catch (error) {
+    console.error('Error al exportar puntos de ayuda en CSV:', error.message);
+    return res.status(500).send(`Error: ${error.message}`);
+  }
+});
+
+// Sincronizar centros y puntos de ayuda externos desde ayudaparavenezuela.com
+async function syncExternalCSVs() {
+  console.log('[Sync CSV] Iniciando sincronización de centros y puntos de ayuda externos...');
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN;');
+    await client.query("SET LOCAL app.role = 'authenticated';");
+
+    // 1. Sincronizar centros de acopio
+    console.log('[Sync CSV] Descargando centros desde ayudaparavenezuela.com...');
+    const centersRes = await fetch('https://ayudaparavenezuela.com/api/public/centers/csv');
+    if (centersRes.ok) {
+      const centersCSV = await centersRes.text();
+      const workbook = XLSX.read(centersCSV, { type: 'string' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet);
+      
+      console.log(`[Sync CSV] Procesando ${data.length} centros de acopio externos.`);
+      for (const row of data) {
+        const id = row.id;
+        const name = row.name || '';
+        const state = row.state || '';
+        const city = row.city || '';
+        const address = row.address || '';
+        const latitude = parseFloat(row.latitude);
+        const longitude = parseFloat(row.longitude);
+        const phone = row.phone || '';
+        const schedule = row.schedule || '';
+        const supplies = row.supply_types || '';
+        const is_active = row.is_active === 'true' || row.is_active === true || row.is_active === 1;
+        const notes = row.notes || '';
+
+        if (!id || !name || isNaN(latitude) || isNaN(longitude)) continue;
+
+        const location_text = [city, address].filter(Boolean).join(', ') || 'Sin dirección';
+        const contact_info = [phone, notes].filter(Boolean).join(' | ');
+
+        await client.query(`
+          INSERT INTO public.collection_centers (
+            id, name, location_text, lat, lng, supplies, schedule, contact_info, capacity_status, is_active
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            location_text = EXCLUDED.location_text,
+            lat = EXCLUDED.lat,
+            lng = EXCLUDED.lng,
+            supplies = EXCLUDED.supplies,
+            schedule = EXCLUDED.schedule,
+            contact_info = EXCLUDED.contact_info,
+            capacity_status = EXCLUDED.capacity_status,
+            is_active = EXCLUDED.is_active;
+        `, [id, name, location_text, latitude, longitude, supplies, schedule, contact_info, 'operativo', is_active]);
+      }
+    } else {
+      console.error(`[Sync CSV] Error al descargar centros: Estado ${centersRes.status}`);
+    }
+
+    // 2. Sincronizar puntos de ayuda / incidentes
+    console.log('[Sync CSV] Descargando puntos de ayuda desde ayudaparavenezuela.com...');
+    const helpRes = await fetch('https://ayudaparavenezuela.com/api/public/help-points/csv');
+    if (helpRes.ok) {
+      const helpCSV = await helpRes.text();
+      const workbook = XLSX.read(helpCSV, { type: 'string' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet);
+      
+      console.log(`[Sync CSV] Procesando ${data.length} puntos de ayuda externos.`);
+      for (const row of data) {
+        const id = row.id;
+        const name = row.name || '';
+        const state = row.state || '';
+        const city = row.city || '';
+        const address = row.address || '';
+        const latitude = parseFloat(row.latitude);
+        const longitude = parseFloat(row.longitude);
+        const needs = row.needs || '';
+        const status = row.status || '';
+        const notes = row.notes || '';
+        const is_active = row.is_active === 'true' || row.is_active === true || row.is_active === 1;
+
+        if (!id || isNaN(latitude) || isNaN(longitude)) continue;
+
+        const type = mapNeedsToType(needs);
+        const urgency = mapStatusToUrgency(status);
+        const title = name || `Punto de ayuda: ${needs}`;
+        const source_url = `https://ayudaparavenezuela.com/help-points/${id}`;
+        const description = notes || `Punto de ayuda externo. Necesidades: ${needs}`;
+        const location_text = [city, address].filter(Boolean).join(', ') || 'Sin dirección';
+        const contact_info = '(Punto de ayuda externo)';
+        const is_resolved = !is_active;
+
+        await client.query(`
+          INSERT INTO public.reports (
+            id, type, urgency, title, source_url, description, location_text, lat, lng, contact_info, state, is_resolved
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ON CONFLICT (id) DO UPDATE SET
+            type = EXCLUDED.type,
+            urgency = EXCLUDED.urgency,
+            title = EXCLUDED.title,
+            source_url = EXCLUDED.source_url,
+            description = EXCLUDED.description,
+            location_text = EXCLUDED.location_text,
+            lat = EXCLUDED.lat,
+            lng = EXCLUDED.lng,
+            contact_info = EXCLUDED.contact_info,
+            state = EXCLUDED.state,
+            is_resolved = EXCLUDED.is_resolved;
+        `, [id, type, urgency, title, source_url, description, location_text, latitude, longitude, contact_info, state, is_resolved]);
+      }
+    } else {
+      console.error(`[Sync CSV] Error al descargar puntos de ayuda: Estado ${helpRes.status}`);
+    }
+
+    await client.query('COMMIT;');
+    console.log('[Sync CSV] Sincronización completada con éxito.');
+  } catch (error) {
+    if (client) await client.query('ROLLBACK;');
+    console.error('[Sync CSV] Error en sincronización:', error.message);
+  } finally {
+    if (client) client.release();
+  }
+}
+
+function mapNeedsToType(needs = '') {
+  const n = String(needs).toLowerCase();
+  if (n.includes('medico') || n.includes('medicina') || n.includes('heridos') || n.includes('hospital')) {
+    return 'emergencia_medica';
+  }
+  if (n.includes('estructura') || n.includes('colapso') || n.includes('escombros') || n.includes('maquinaria') || n.includes('herramientas')) {
+    return 'rescate_estructural';
+  }
+  if (n.includes('desaparecido') || n.includes('buscar') || n.includes('personas')) {
+    return 'desaparecido';
+  }
+  return 'suministros';
+}
+
+function mapStatusToUrgency(status = '') {
+  const s = String(status).toLowerCase();
+  if (s === 'urgent' || s === 'urgente') return 'alto';
+  if (s === 'critical' || s === 'critico') return 'critico';
+  return 'medio';
+}
+
+// Endpoint admin para forzar sincronización de CSVs externos
+app.get('/api/admin/sync-external-csvs', async (req, res) => {
+  try {
+    await syncExternalCSVs();
+    return res.status(200).send('Sincronización de CSVs externos completada con éxito.');
+  } catch (error) {
+    return res.status(500).send(`Error: ${error.message}`);
+  }
+});
+
+
 app.listen(port, () => {
   console.log(`Servidor de emergencia escuchando en el puerto ${port}`);
   startMissingPersonsSyncScheduler();
+  // Sincronizar de inmediato al arrancar el servidor
+  syncExternalCSVs();
+  // Sincronizar periódicamente cada 4 horas
+  setInterval(syncExternalCSVs, 4 * 60 * 60 * 1000);
 });
