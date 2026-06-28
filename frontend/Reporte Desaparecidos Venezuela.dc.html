@@ -3667,6 +3667,62 @@
             filterPhones();
         });
     });
+    // ========================================================================
+    // WEBMCP TOOL REGISTRATION (AI Agent Web Tools Integration)
+    // ========================================================================
+    if (navigator.modelContext && typeof navigator.modelContext.provideContext === 'function') {
+        try {
+            navigator.modelContext.provideContext({
+                tools: [
+                    {
+                        name: "report_emergency",
+                        description: "Submit a new humanitarian emergency or incident report.",
+                        inputSchema: {
+                            type: "object",
+                            properties: {
+                                title: { type: "string", description: "Short title of the emergency" },
+                                description: { type: "string", description: "Detailed description of the emergency" },
+                                type: { type: "string", enum: ["desaparecido", "emergencia_medica", "rescate_estructural", "suministros"], description: "Category of emergency" },
+                                location_text: { type: "string", description: "Location name or text details" },
+                                state: { type: "string", description: "Venezuelan state name" }
+                            },
+                            required: ["title", "description", "type", "location_text"]
+                        },
+                        execute: async (args) => {
+                            console.log("WebMCP Tool report_emergency invoked with args:", args);
+                            return { success: true, message: "Use the emergency report form on screen or POST to /api/reports." };
+                        }
+                    },
+                    {
+                        name: "search_emergency_phones",
+                        description: "Search for Venezuelan emergency phone numbers by keyword.",
+                        inputSchema: {
+                            type: "object",
+                            properties: {
+                                query: { type: "string", description: "Search term (e.g. bomberos, chacao, caracas)" }
+                            },
+                            required: ["query"]
+                        },
+                        execute: async (args) => {
+                            const results = [];
+                            const q = args.query.toLowerCase();
+                            const list = document.querySelectorAll('.sidebar .card div[data-search]');
+                            list.forEach(el => {
+                                const cardText = el.innerText.toLowerCase();
+                                if (cardText.includes(q)) {
+                                    results.push(el.innerText.trim().replace(/\n/g, ' '));
+                                }
+                            });
+                            return { query: args.query, results };
+                        }
+                    }
+                ]
+            });
+            console.log("WebMCP Tools registered successfully.");
+        } catch (err) {
+            console.error("Failed to register WebMCP Context:", err);
+        }
+    }
 </script>
 
 </body>

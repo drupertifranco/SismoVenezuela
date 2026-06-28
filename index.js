@@ -77,8 +77,88 @@ app.use(express.static(path.join(__dirname, 'frontend'), {
   }
 }));
 
-// Ruta raíz para servir el HTML principal del frontend
-app.get('/', (req, res) => {
+async function generateHomepageMarkdown() {
+  let activeReportsCount = 0;
+  let missingCount = 0;
+  let recentReports = [];
+
+  try {
+    const reportsRes = await pool.query("SELECT COUNT(*) FROM public.reports WHERE is_resolved = false;");
+    activeReportsCount = parseInt(reportsRes.rows[0].count, 10);
+  } catch (err) {
+    console.error('Error counting reports for markdown:', err.message);
+  }
+
+  try {
+    const missingRes = await pool.query(
+      `SELECT COUNT(*) FROM public.missing_persons mp 
+       JOIN public.reports r ON mp.report_id = r.id 
+       WHERE r.is_resolved = false;`
+    );
+    missingCount = parseInt(missingRes.rows[0].count, 10);
+  } catch (err) {
+    console.error('Error counting missing persons for markdown:', err.message);
+  }
+
+  try {
+    const recentRes = await pool.query(
+      `SELECT type, title, location_text, state, created_at 
+       FROM public.reports 
+       WHERE is_resolved = false 
+       ORDER BY created_at DESC LIMIT 5;`
+    );
+    recentReports = recentRes.rows;
+  } catch (err) {
+    console.error('Error fetching recent reports for markdown:', err.message);
+  }
+
+  let md = `# 🇻🇪 SismoVenezuela | Plataforma Humanitaria y Emergencias\n\n`;
+  md += `Plataforma humanitaria centralizada para el reporte de incidentes, localización de personas desaparecidas y monitoreo de conectividad de red tras el sismo en Venezuela.\n\n`;
+  md += `## 📊 Resumen de la Emergencia Actual\n`;
+  md += `*   **Incidentes Activos**: ${activeReportsCount} reportados en la plataforma.\n`;
+  md += `*   **Personas Desactivas/Desaparecidas**: ${missingCount} personas reportadas en búsqueda activa.\n\n`;
+
+  if (recentReports.length > 0) {
+    md += `## 🚨 Últimos Reportes Recibidos\n`;
+    recentReports.forEach(r => {
+      const typeLabel = r.type.replace('_', ' ').toUpperCase();
+      md += `*   **[${typeLabel}]** ${r.title} - *Lugar:* ${r.location_text || 'Área afectada'} (${r.state || 'N/A'}) - *Fecha:* ${new Date(r.created_at).toLocaleString('es-VE')}\n`;
+    });
+    md += `\n`;
+  }
+
+  md += `## 📞 Números de Emergencia Principales\n`;
+  md += `*   **Bomberos Metropolitanos**: (0212) 545.45.45\n`;
+  md += `*   **Protección Civil Nacional**: 0800-5588427 / 0800-2668446 / 0800-2624368\n`;
+  md += `*   **Defensa Civil Alcaldía Mayor**: (0212) 662.67.59\n\n`;
+
+  md += `## 🌐 Alianzas e Iniciativas Tecnológicas (Red Quipu)\n`;
+  md += `*   **Plataforma Central**: [Red Quipu](https://redquipu.com)\n`;
+  md += `*   **Reporte de Desaparecidos**: [venezuelareporta.org](https://venezuelareporta.org) | [venezuelatebusca.com](https://venezuelatebusca.com)\n`;
+  md += `*   **Inspección Habitacional**: [habitable.lovable.app](https://habitable.lovable.app)\n`;
+  md += `*   **Centros de Acopio**: [ayudaparavenezuela.com](https://ayudaparavenezuela.com) | [zonasegura.up.railway.app](https://zonasegura.up.railway.app)\n\n`;
+
+  md += `---  \n`;
+  md += `*Para consumir la API de esta plataforma en formato estructurado, accede a:*\n`;
+  md += `*   **Catálogo de APIs**: [https://ayudavenezuela.technolink.tech/.well-known/api-catalog](https://ayudavenezuela.technolink.tech/.well-known/api-catalog)\n`;
+  md += `*   **Feed PFIF 1.4**: [https://ayudavenezuela.technolink.tech/pfif](https://ayudavenezuela.technolink.tech/pfif)\n`;
+
+  return md;
+}
+
+// Ruta raíz para servir el HTML principal del frontend o versión Markdown
+app.get('/', async (req, res) => {
+  const acceptHeader = req.headers.accept || '';
+  const wantsMarkdown = acceptHeader.includes('text/markdown') || req.query.format === 'markdown';
+
+  res.setHeader('Link', '</.well-known/api-catalog>; rel="api-catalog", </pfif>; rel="service-desc"');
+
+  if (wantsMarkdown) {
+    res.header('Content-Type', 'text/markdown; charset=utf-8');
+    const md = await generateHomepageMarkdown();
+    return res.send(md);
+  }
+
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'frontend', 'Reporte Desaparecidos Venezuela.dc.html'));
 });
@@ -1407,6 +1487,25 @@ app.get('/personas/:id', async (req, res) => {
     const locationText = (!p.location_text || p.location_text === 'null') ? 'Área afectada' : p.location_text;
     const stateText = (!p.state || p.state === 'null') ? 'Venezuela' : p.state;
 
+    const acceptHeader = req.headers.accept || '';
+    const wantsMarkdown = acceptHeader.includes('text/markdown') || req.query.format === 'markdown';
+
+    if (wantsMarkdown) {
+      res.header('Content-Type', 'text/markdown; charset=utf-8');
+      res.setHeader('Link', '</.well-known/api-catalog>; rel="api-catalog", </pfif>; rel="service-desc"');
+      
+      let pMd = `# 🚨 BÚSQUEDA ACTIVA: Localizar a ${fullName}\n\n`;
+      pMd += `*   **ID de Búsqueda**: \`${id}\`\n`;
+      pMd += `*   **Estado**: Desaparecido/a (Activo)\n`;
+      pMd += `*   **Última ubicación reportada**: ${locationText}, Estado ${stateText}\n\n`;
+      pMd += `## 📝 Descripción Física y Detalles\n`;
+      pMd += `${p.physical_description || 'Sin descripción física detallada disponible.'}\n\n`;
+      pMd += `---\n`;
+      pMd += `*Si tienes cualquier información sobre el paradero de esta persona, por favor repórtala de inmediato en la plataforma SismoVenezuela o comunícate con las autoridades locales.*\n`;
+      
+      return res.send(pMd);
+    }
+
     const title = `🚨 BUSQUEDA ACTIVA: Localizar a ${fullName} | SismoVenezuela`;
     const description = `Ayúdanos a localizar a ${fullName}. Visto por última vez en: ${locationText}, Estado ${stateText}. Comparte cualquier información para ayudar.`;
     const canonicalUrl = `https://ayudavenezuela.technolink.tech/personas/${id}`;
@@ -1432,6 +1531,139 @@ app.get('/personas/:id', async (req, res) => {
     console.error('Error al inyectar SEO dinámico:', error.message);
     res.sendFile(htmlPath); // Fallback: servir archivo estático base
   }
+});
+
+
+// ============================================================================
+// AI AGENT READY & DISCOVERY ENDPOINTS (RFC 8288, RFC 9727, RFC 9728, WebMCP)
+// ============================================================================
+
+// 1. API Catalog (RFC 9727)
+app.get('/.well-known/api-catalog', (req, res) => {
+  res.header('Content-Type', 'application/linkset+json; charset=utf-8');
+  res.json({
+    linkset: [
+      {
+        anchor: "https://ayudavenezuela.technolink.tech/",
+        rel: "api-catalog",
+        href: "https://ayudavenezuela.technolink.tech/.well-known/api-catalog"
+      },
+      {
+        anchor: "https://ayudavenezuela.technolink.tech/api/reports",
+        rel: "service-desc",
+        type: "application/json",
+        href: "https://ayudavenezuela.technolink.tech/api/reports"
+      },
+      {
+        anchor: "https://ayudavenezuela.technolink.tech/pfif",
+        rel: "service-desc",
+        type: "application/xml",
+        href: "https://ayudavenezuela.technolink.tech/pfif"
+      },
+      {
+        anchor: "https://ayudavenezuela.technolink.tech/health",
+        rel: "status",
+        type: "application/json",
+        href: "https://ayudavenezuela.technolink.tech/health"
+      }
+    ]
+  });
+});
+
+// 2. OpenID Connect Discovery Configuration
+app.get('/.well-known/openid-configuration', (req, res) => {
+  res.json({
+    issuer: "https://ayudavenezuela.technolink.tech",
+    authorization_endpoint: "https://ayudavenezuela.technolink.tech/auth/login",
+    token_endpoint: "https://ayudavenezuela.technolink.tech/auth/token",
+    jwks_uri: "https://ayudavenezuela.technolink.tech/.well-known/jwks.json",
+    grant_types_supported: ["authorization_code", "client_credentials"],
+    response_types_supported: ["code", "token"],
+    subject_types_supported: ["public"],
+    id_token_signing_alg_values_supported: ["RS256"]
+  });
+});
+
+// 3. OAuth 2.0 Authorization Server Metadata (RFC 8414)
+app.get('/.well-known/oauth-authorization-server', (req, res) => {
+  res.json({
+    issuer: "https://ayudavenezuela.technolink.tech",
+    authorization_endpoint: "https://ayudavenezuela.technolink.tech/auth/login",
+    token_endpoint: "https://ayudavenezuela.technolink.tech/auth/token",
+    jwks_uri: "https://ayudavenezuela.technolink.tech/.well-known/jwks.json",
+    grant_types_supported: ["authorization_code", "client_credentials"],
+    response_types_supported: ["code", "token"],
+    agent_auth: {
+      register_uri: "https://ayudavenezuela.technolink.tech/auth/register",
+      supported_identity_types: ["organization", "agent_runner"],
+      supported_credential_types: ["private_key_jwt"]
+    }
+  });
+});
+
+// 4. OAuth Protected Resource Metadata (RFC 9728)
+app.get('/.well-known/oauth-protected-resource', (req, res) => {
+  res.json({
+    resource: "https://ayudavenezuela.technolink.tech/api/reports",
+    authorization_servers: [
+      "https://ayudavenezuela.technolink.tech"
+    ],
+    scopes_supported: ["read:reports", "write:reports", "resolve:reports"]
+  });
+});
+
+// 5. MCP Server Card (SEP-1649)
+app.get('/.well-known/mcp/server-card.json', (req, res) => {
+  res.json({
+    serverInfo: {
+      name: "SismoVenezuela Emergency Server",
+      version: "1.0.0",
+      description: "Exposes emergency response data, missing persons, and connectivity telemetry in Venezuela."
+    },
+    transport: {
+      type: "sse",
+      endpoint: "https://ayudavenezuela.technolink.tech/api/mcp/sse"
+    },
+    capabilities: {
+      resources: {
+        subscribe: true,
+        list: true
+      },
+      tools: {
+        list: true
+      }
+    }
+  });
+});
+
+// 6. Agent Skills Discovery Index (Agent Skills RFC v0.2.0)
+app.get('/.well-known/agent-skills/index.json', (req, res) => {
+  res.json({
+    $schema: "https://agentskills.io/schema/v0.2.0/discovery.json",
+    skills: [
+      {
+        name: "link-headers",
+        type: "link-headers",
+        description: "Link response headers pointing agents to catalog resources.",
+        url: "https://ayudavenezuela.technolink.tech/.well-known/agent-skills/link-headers/SKILL.md",
+        sha256: "4fa6e3b8a3e0c010a30b30ef2d36a18d10e0c90c177f2e7e71076c2c7311fdbb"
+      },
+      {
+        name: "markdown-negotiation",
+        type: "markdown-negotiation",
+        description: "Content negotiation returning clean Markdown formatting.",
+        url: "https://ayudavenezuela.technolink.tech/.well-known/agent-skills/markdown-negotiation/SKILL.md",
+        sha256: "8b64e0add41743f5bf40fbca0236a18d10e0c90c177f2e7e71076c2c7311fdbb"
+      },
+      {
+        name: "api-catalog",
+        type: "api-catalog",
+        description: "RFC 9727 API Catalog for automated endpoint discovery.",
+        url: "https://ayudavenezuela.technolink.tech/.well-known/agent-skills/api-catalog/SKILL.md",
+        sha256: "cb6bf133450c8f9c068136b7608c86d2775957c0098b4722d36c2c7311fdbbc0"
+      }
+    ]
+  });
 });
 
 
