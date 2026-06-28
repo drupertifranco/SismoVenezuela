@@ -1721,29 +1721,31 @@ BEGIN
 
     ELSE
         v_status := 'created';
-        INSERT INTO public.reports (
-            type,
-            urgency,
-            title,
-            source_url,
-            description,
-            location_text,
-            lat,
-            lng,
-            contact_info,
-            state
-        ) VALUES (
-            v_type::incident_type,
-            v_urgency::urgency_level,
-            v_title,
-            v_source_url,
-            v_description,
-            v_location_text,
-            v_lat,
-            v_lng,
-            v_contact_info,
-            v_state
-        ) RETURNING id INTO v_report_id;
+        EXECUTE '
+            INSERT INTO public.reports (
+                type,
+                urgency,
+                title,
+                source_url,
+                description,
+                location_text,
+                lat,
+                lng,
+                contact_info,
+                state
+            ) VALUES (
+                $1::incident_type,
+                $2::urgency_level,
+                $3,
+                $4,
+                $5,
+                $6,
+                $7,
+                $8,
+                $9,
+                $10
+            ) RETURNING id
+        ' INTO v_report_id USING v_type, v_urgency, v_title, v_source_url, v_description, v_location_text, v_lat, v_lng, v_contact_info, v_state;
     END IF;
 
     -- 5. Procesamiento de Persona Desaparecida
