@@ -1609,6 +1609,33 @@ app.get('/api/admin/cleanup-reimport', async (req, res) => {
 });
 
 
+app.get('/api/admin/deploy-function', async (req, res) => {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) return res.status(500).send('DATABASE_URL no definida.');
+  const pgPool = new pg.Pool({ connectionString });
+  let client;
+  try {
+    client = await pgPool.connect();
+    
+    const sqlPath = path.join(__dirname, 'database', 'schema.sql');
+    const sql = fs.readFileSync(sqlPath, 'utf8');
+    
+    const startIdx = sql.indexOf('CREATE OR REPLACE FUNCTION public.submit_emergency_report');
+    if (startIdx === -1) {
+      return res.status(400).send('No se encontró la función en schema.sql');
+    }
+    const funcSql = sql.substring(startIdx);
+    
+    await client.query(funcSql);
+    return res.send('Función creada/actualizada exitosamente.');
+  } catch (err) {
+    return res.status(500).send(`Error: ${err.message}`);
+  } finally {
+    if (client) client.release();
+    await pgPool.end();
+  }
+});
+
 // Endpoint para forzar la limpieza de registros importados con prefijo hosp_mpc
 app.get('/api/admin/debug-db', async (req, res) => {
   const connectionString = process.env.DATABASE_URL;
