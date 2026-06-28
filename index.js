@@ -2202,6 +2202,429 @@ async function syncExternalCSVs() {
   }
 }
 
+// ==========================================
+// MÓDULO UNIFICADO: ASISTENTE IA DE ACOPIO
+// ==========================================
+
+// Helper unificado para extraer datos estructurados de un reporte usando Gemini
+async function processAcopioInputWithGemini({ text, audioBuffer, audioMimeType }) {
+  let ai;
+  if (process.env.GEMINI_API_KEY) {
+    delete process.env.GOOGLE_GENAI_USE_ENTERPRISE;
+    delete process.env.GOOGLE_CLOUD_PROJECT;
+    delete process.env.GOOGLE_CLOUD_LOCATION;
+    ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  } else if (process.env.GCP_PROJECT_ID) {
+    process.env.GOOGLE_GENAI_USE_ENTERPRISE = 'true';
+    process.env.GOOGLE_CLOUD_PROJECT = process.env.GCP_PROJECT_ID;
+    process.env.GOOGLE_CLOUD_LOCATION = 'us-central1';
+    ai = new GoogleGenAI({});
+  } else {
+    throw new Error('El servicio de IA no está configurado (falta GEMINI_API_KEY).');
+  }
+
+  // Esquema JSON estricto para retorno de Gemini
+  const responseSchema = {
+    type: 'OBJECT',
+    properties: {
+      intent: { 
+        type: 'STRING', 
+        enum: ['REGISTER', 'UPDATE'],
+        description: 'REGISTER si el usuario describe un centro nuevo. UPDATE si actualiza insumos, horario o estado de un centro de acopio que ya se conoce o se sobreentiende.'
+      },
+      center_name: { 
+        type: 'STRING',
+        description: 'Nombre del centro de acopio. Debe ser una cadena de texto clara.'
+      },
+      location_description: { 
+        type: 'STRING',
+        description: 'Parroquia, sector, calle o puntos de referencia para ubicar el centro.'
+      },
+      supplies: { 
+        type: 'STRING',
+        description: 'Lista de insumos requeridos (ej: agua, alimentos, medicinas, cobijas, colchonetas).'
+      },
+      schedule: { 
+        type: 'STRING',
+        description: 'Horario o días de atención mencionados.'
+      },
+      contact_info: { 
+        type: 'STRING',
+        description: 'Teléfonos, nombres de contacto o encargados.'
+      },
+      capacity_status: { 
+        type: 'STRING',
+        enum: ['operativo', 'alta_demanda', 'sin_capacidad'],
+        description: 'Estado de saturación del centro de acopio.'
+      },
+      transcription: { 
+        type: 'STRING',
+        description: 'Transcripción exacta e íntegra al español de todo el mensaje de voz.'
+      }
+    },
+    required: ['intent', 'center_name', 'transcription']
+  };
+
+  const contents = [];
+  if (audioBuffer) {
+    contents.push({
+      inlineData: {
+        data: audioBuffer.toString('base64'),
+        mimeType: audioMimeType || 'audio/ogg'
+      }
+    });
+  }
+
+  const prompt = text 
+    ? `Analiza el siguiente reporte escrito sobre un centro de acopio/ayuda en Venezuela. Determina si quieren registrar uno nuevo o actualizar uno existente, y extrae los campos estructurados requeridos. Escribe el texto exacto en el campo "transcription".
+Reporte escrito:
+"${text}"`
+    : `Analiza minuciosamente este audio de un centro de acopio/ayuda en Venezuela. Identifica si quieren registrar uno nuevo o actualizar uno existente, transcribe todo el audio textualmente en "transcription", y extrae la información requerida de manera estructurada en español.`;
+
+  contents.push(prompt);
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema
+    }
+  });
+
+  return JSON.parse(response.text);
+}
+
+// Controlador de procesamiento, búsqueda difusa e inserción/actualización de base de datos
+async function handleAcopioInput({ text, audioBuffer, audioMimeType, userLat, userLng }) {
+  // 1. Extraer los datos estructurados con Gemini
+  const extracted = await processAcopioInputWithGemini({ text, audioBuffer, audioMimeType });
+  console.log('[Asistente IA] Datos extraídos por Gemini:', JSON.stringify(extracted, null, 2));
+
+  const centerName = extracted.center_name;
+  const intent = extracted.intent;
+
+  let matchedCenterId = null;
+  let matchedCenterName = null;
+
+  // 2. Si la intención es actualizar (UPDATE), buscar coincidencia
+  if (intent === 'UPDATE' && centerName) {
+    // Buscar primero por cercanía GPS (radio de 500m) si el usuario envió coordenadas
+    if (userLat && userLng) {
+      const distanceQuery = `
+        SELECT id, name,
+               (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($3)) * sin(radians(lat)))) AS distance
+        FROM public.collection_centers
+        WHERE is_active = true
+        ORDER BY distance ASC
+        LIMIT 1;
+      `;
+      const distResult = await pool.query(distanceQuery, [userLat, userLng, userLat]);
+      if (distResult.rows.length > 0 && distResult.rows[0].distance <= 500) {
+        matchedCenterId = distResult.rows[0].id;
+        matchedCenterName = distResult.rows[0].name;
+        console.log(`[Asistente IA] Coincidencia física encontrada por GPS (<500m): ${matchedCenterName} (ID: ${matchedCenterId})`);
+      }
+    }
+
+    // Si no se encontró por GPS, usar coincidencia difusa por nombre en PostgreSQL
+    if (!matchedCenterId) {
+      const fuzzyQuery = `
+        SELECT id, name, similarity(name, $1) as score
+        FROM public.collection_centers
+        WHERE is_active = true AND similarity(name, $1) > 0.35
+        ORDER BY score DESC
+        LIMIT 1;
+      `;
+      const fuzzyResult = await pool.query(fuzzyQuery, [centerName]);
+      if (fuzzyResult.rows.length > 0) {
+        matchedCenterId = fuzzyResult.rows[0].id;
+        matchedCenterName = fuzzyResult.rows[0].name;
+        console.log(`[Asistente IA] Coincidencia difusa encontrada por nombre: ${matchedCenterName} (Score: ${fuzzyResult.rows[0].score})`);
+      }
+    }
+  }
+
+  // 3. Ejecutar inserción o actualización de manera segura
+  if (matchedCenterId) {
+    const updateFields = [];
+    const updateValues = [];
+    let paramCounter = 1;
+
+    if (extracted.supplies) {
+      updateFields.push(`supplies = $${paramCounter++}`);
+      updateValues.push(extracted.supplies);
+    }
+    if (extracted.schedule) {
+      updateFields.push(`schedule = $${paramCounter++}`);
+      updateValues.push(extracted.schedule);
+    }
+    if (extracted.contact_info) {
+      updateFields.push(`contact_info = $${paramCounter++}`);
+      updateValues.push(extracted.contact_info);
+    }
+    if (extracted.capacity_status) {
+      updateFields.push(`capacity_status = $${paramCounter++}`);
+      updateValues.push(extracted.capacity_status);
+    }
+
+    if (updateFields.length > 0) {
+      updateValues.push(matchedCenterId);
+      const updateQuery = `
+        UPDATE public.collection_centers
+        SET ${updateFields.join(', ')}
+        WHERE id = $${paramCounter}
+        RETURNING *;
+      `;
+      const updateRes = await pool.query(updateQuery, updateValues);
+      return {
+        success: true,
+        action: 'UPDATE',
+        matched: true,
+        center: updateRes.rows[0],
+        extracted
+      };
+    } else {
+      const selectRes = await pool.query(`SELECT * FROM public.collection_centers WHERE id = $1;`, [matchedCenterId]);
+      return {
+        success: true,
+        action: 'UPDATE',
+        matched: true,
+        center: selectRes.rows[0],
+        extracted
+      };
+    }
+  } else {
+    // Es REGISTER (o UPDATE no emparejado): se crea un nuevo centro de acopio
+    const lat = userLat || 10.5000; // Por defecto Caracas
+    const lng = userLng || -66.9030;
+    const locationText = extracted.location_description || 'Ubicación no especificada';
+
+    const insertQuery = `
+      INSERT INTO public.collection_centers (
+        name, location_text, lat, lng, supplies, schedule, contact_info, capacity_status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *;
+    `;
+    const insertRes = await pool.query(insertQuery, [
+      extracted.center_name || 'Centro de Acopio Anónimo',
+      locationText,
+      lat,
+      lng,
+      extracted.supplies || null,
+      extracted.schedule || null,
+      extracted.contact_info || null,
+      extracted.capacity_status || 'operativo'
+    ]);
+
+    return {
+      success: true,
+      action: 'REGISTER',
+      matched: false,
+      center: insertRes.rows[0],
+      extracted
+    };
+  }
+}
+
+// Helpers nativos para integración de Telegram Bot
+async function getTelegramFileUrl(fileId) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const res = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
+  const json = await res.json();
+  if (!json.ok) {
+    throw new Error(`Error en getFile de Telegram: ${json.description}`);
+  }
+  return `https://api.telegram.org/file/bot${token}/${json.result.file_path}`;
+}
+
+async function downloadFileBuffer(url) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Error al descargar archivo de Telegram: ${res.statusText}`);
+  }
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+async function sendTelegramAction(chatId, action) {
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, action })
+    });
+  } catch (err) {
+    console.error('Error enviando acción de chat a Telegram:', err.message);
+  }
+}
+
+async function sendTelegramMessage(chatId, text) {
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: 'Markdown'
+      })
+    });
+  } catch (err) {
+    console.error('Error enviando mensaje de Telegram:', err.message);
+  }
+}
+
+function statusEmoji(status) {
+  if (status === 'alta_demanda') return '🟡';
+  if (status === 'sin_capacidad') return '🔴';
+  return '🟢';
+}
+
+function formatAcopioReply(result) {
+  const { action, center, extracted } = result;
+  const supplies = center.supplies || '_Ninguno reportado_';
+  const schedule = center.schedule || '_No especificado_';
+  const contact = center.contact_info || '_No especificado_';
+  const statusText = center.capacity_status.replace('_', ' ').toUpperCase();
+
+  const transcriptionText = extracted.transcription 
+    ? `\n\n*Transcripción de tu audio:*\n_"${extracted.transcription}"_`
+    : '';
+
+  if (action === 'UPDATE') {
+    return `✅ *¡Centro de Acopio Actualizado!*
+
+Hemos identificado y actualizado con éxito el centro:
+*📍 Centro:* ${center.name}
+*📍 Dirección:* ${center.location_text}
+*📦 Insumos Necesitados:* ${supplies}
+*⏰ Horario:* ${schedule}
+*📞 Contacto:* ${contact}
+*📊 Estado:* ${statusEmoji(center.capacity_status)} ${statusText}${transcriptionText}
+
+_¡Gracias por tu reporte! Ya se encuentra visible en el mapa web en tiempo real._`;
+  } else {
+    return `🆕 *¡Nuevo Centro de Acopio Registrado!*
+
+Hemos creado un nuevo registro en el sistema:
+*📍 Centro:* ${center.name}
+*📍 Dirección:* ${center.location_text}
+*📦 Insumos Disponibles/Necesitados:* ${supplies}
+*⏰ Horario:* ${schedule}
+*📞 Contacto:* ${contact}
+*📊 Estado:* ${statusEmoji(center.capacity_status)} ${statusText}${transcriptionText}
+
+_¡Gracias por registrar este punto! Ya se encuentra en el mapa de ayuda de SismoVenezuela._`;
+  }
+}
+
+// ==========================================
+// ENDPOINTS DE LA API DE ACOPIO INTELIGENTE
+// ==========================================
+
+// Endpoint de audio: recibe audio bruto de la Web App en el body
+app.post('/api/acopio-chat/audio', express.raw({ type: 'audio/*', limit: '15mb' }), async (req, res) => {
+  try {
+    const audioBuffer = req.body;
+    const contentType = req.headers['content-type'] || 'audio/ogg';
+    const lat = req.query.lat ? parseFloat(req.query.lat) : null;
+    const lng = req.query.lng ? parseFloat(req.query.lng) : null;
+
+    if (!audioBuffer || audioBuffer.length === 0) {
+      return res.status(400).json({ success: false, error: 'El archivo de audio está vacío.' });
+    }
+
+    console.log(`[Acopio Chat] Recibido audio desde web (${audioBuffer.length} bytes, tipo: ${contentType})`);
+    
+    const result = await handleAcopioInput({
+      audioBuffer,
+      audioMimeType: contentType,
+      userLat: lat,
+      userLng: lng
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Error procesando audio subido de la web:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Endpoint de texto: recibe texto de chat tradicional desde la Web App
+app.post('/api/acopio-chat/text', express.json(), async (req, res) => {
+  try {
+    const { text, lat, lng } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ success: false, error: 'El texto del reporte es requerido.' });
+    }
+
+    console.log(`[Acopio Chat] Recibido texto desde web: "${text}"`);
+    
+    const result = await handleAcopioInput({
+      text,
+      userLat: lat ? parseFloat(lat) : null,
+      userLng: lng ? parseFloat(lng) : null
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Error procesando texto de chat:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Endpoint Webhook para Telegram Bot
+app.post('/api/telegram/webhook/:token', express.json(), async (req, res) => {
+  const { token } = req.params;
+  if (!process.env.TELEGRAM_BOT_TOKEN || token !== process.env.TELEGRAM_BOT_TOKEN) {
+    return res.status(403).json({ success: false, error: 'Unauthorized token' });
+  }
+
+  const update = req.body;
+  // Responder inmediatamente con 200 a Telegram para evitar reenvíos duplicados
+  res.status(200).json({ ok: true });
+
+  try {
+    if (update.message) {
+      const chatId = update.message.chat.id;
+      const text = update.message.text;
+      const voice = update.message.voice;
+
+      if (voice) {
+        await sendTelegramAction(chatId, 'record_voice');
+        const fileId = voice.file_id;
+        console.log(`[Telegram Bot] Recibida nota de voz (file_id: ${fileId})`);
+
+        const fileUrl = await getTelegramFileUrl(fileId);
+        const audioBuffer = await downloadFileBuffer(fileUrl);
+
+        const result = await handleAcopioInput({
+          audioBuffer,
+          audioMimeType: 'audio/ogg' // Formato nativo de voz de Telegram
+        });
+
+        const reply = formatAcopioReply(result);
+        await sendTelegramMessage(chatId, reply);
+
+      } else if (text) {
+        if (text === '/start') {
+          await sendTelegramMessage(chatId, `🇻🇪 *¡Bienvenido al Asistente de SismoVenezuela!* 🇻🇪\n\nEste bot te ayuda a registrar o actualizar las necesidades de los centros de acopio en tiempo real.\n\n*¿Cómo puedes reportar?*\n1. Envíame una **nota de voz** (audio) 🎙️. Cuéntame qué centro de acopio es, dónde queda, qué necesitan, su horario y estado.\n2. O envíame un **mensaje escrito** normal con la descripción.\n\n_Ejemplo:_ "El centro de acopio del Colegio Salesiano en Altamira necesita pañales y sueros, atendemos de 9am a 5pm."`);
+        } else {
+          await sendTelegramAction(chatId, 'typing');
+          const result = await handleAcopioInput({ text });
+          const reply = formatAcopioReply(result);
+          await sendTelegramMessage(chatId, reply);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error procesando update de Telegram:', error);
+  }
+});
+
 function mapNeedsToType(needs = '') {
   const n = String(needs).toLowerCase();
   if (n.includes('medico') || n.includes('medicina') || n.includes('heridos') || n.includes('hospital')) {

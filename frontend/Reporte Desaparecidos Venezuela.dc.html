@@ -1979,6 +1979,51 @@
                         <div class="centers-list" id="centersList"></div>
                     </div>
                 </div>
+
+                <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 1.5rem 0;">
+
+                <div class="ai-chat-section">
+                    <div style="font-weight: 700; color: var(--text-primary); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
+                        🤖 Asistente de Acopio IA (Voz o Escrito)
+                        <span style="background: rgba(59, 130, 246, 0.15); font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 99px; color: #3b82f6; font-weight: 600;">Gemini Active</span>
+                    </div>
+                    
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; line-height: 1.4;">
+                        ¿No tienes tiempo de llenar todo el formulario? Simplemente **escribe un mensaje** o **envía una nota de voz** describiendo el centro de acopio y sus necesidades. Nuestro motor de IA (Gemini) la transcribirá, extraerá los datos automáticamente y los registrará en el mapa.
+                    </p>
+
+                    <div class="chat-container" style="border: 1px solid var(--border-color); border-radius: 12px; background: var(--surface-muted); overflow: hidden; display: flex; flex-direction: column; max-height: 380px;">
+                        <div id="aiChatHistory" style="padding: 1rem; overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column; gap: 0.75rem; min-height: 200px; max-height: 280px;">
+                            <div class="chat-message bot" style="background: var(--surface-default); border: 1px solid var(--border-color); padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; max-width: 85%; align-self: flex-start; line-height: 1.4;">
+                                🇻🇪 <strong>Asistente Virtual SismoVenezuela:</strong><br>
+                                ¡Hola! Puedes escribirme o enviarme un mensaje de voz para actualizar o registrar un centro de acopio.
+                                <br><br>
+                                <em>Ejemplos:</em><br>
+                                • "La Iglesia La Candelaria necesita agua mineral y pañales desechables urgentes, abrimos de 9 a 2."<br>
+                                • "El polideportivo de Chacao ya no tiene capacidad, está colmado."
+                            </div>
+                        </div>
+
+                        <div class="chat-input-bar" style="display: flex; flex-direction: column; border-top: 1px solid var(--border-color); background: var(--surface-default); padding: 0.75rem; gap: 0.5rem;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; width: 100%;">
+                                <input type="text" id="aiChatInput" placeholder="Escribe tu reporte de acopio..." style="flex-grow: 1; min-height: 38px; padding: 0.5rem 0.75rem; font-size: 0.85rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--surface-default); color: var(--text-primary);">
+                                <button type="button" class="btn" id="btnSendAiText" style="padding: 0 1rem; min-height: 38px; font-size: 0.85rem;">Enviar</button>
+                                <button type="button" class="btn btn-secondary" id="btnRecordVoice" style="padding: 0; width: 38px; height: 38px; min-height: 38px; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--color-error); background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2);" title="Grabar nota de voz">
+                                    🎙️
+                                </button>
+                            </div>
+                            
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--text-secondary); padding: 0 0.25rem;">
+                                <label style="display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; user-select: none;">
+                                    <input type="checkbox" id="chkAttachGPS" checked> Adjuntar mis coordenadas GPS actuales
+                                </label>
+                                <span id="recordingStatus" style="font-weight: 600; color: var(--color-error); display: none; align-items: center; gap: 0.25rem;">
+                                    <span class="status-dot" style="width: 8px; height: 8px; background-color: var(--color-error); border-radius: 50%; animation: pulse 1s infinite;"></span> Grabando... (<span id="recordingTimer">0s</span>)
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- MONITOREO DE CONECTIVIDAD NACIONAL -->
@@ -3766,6 +3811,258 @@
             filterPhones();
         });
     });
+
+    // ========================================================================
+    // AI CHAT & VOICE ASSISTANT FOR COLLECTION CENTERS
+    // ========================================================================
+    const aiChatHistory = document.getElementById('aiChatHistory');
+    const aiChatInput = document.getElementById('aiChatInput');
+    const btnSendAiText = document.getElementById('btnSendAiText');
+    const btnRecordVoice = document.getElementById('btnRecordVoice');
+    const chkAttachGPS = document.getElementById('chkAttachGPS');
+    const recordingStatus = document.getElementById('recordingStatus');
+    const recordingTimer = document.getElementById('recordingTimer');
+
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+    let timerInterval = null;
+    let recordingSeconds = 0;
+
+    function appendChatMsg(sender, text, isHtml = false) {
+        if (!aiChatHistory) return;
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `chat-message ${sender}`;
+        msgDiv.style.padding = '0.75rem';
+        msgDiv.style.borderRadius = '8px';
+        msgDiv.style.fontSize = '0.85rem';
+        msgDiv.style.maxWidth = '85%';
+        msgDiv.style.lineHeight = '1.4';
+        msgDiv.style.border = '1px solid var(--border-color)';
+        
+        if (sender === 'user') {
+            msgDiv.style.background = 'rgba(59, 130, 246, 0.08)';
+            msgDiv.style.alignSelf = 'flex-end';
+        } else {
+            msgDiv.style.background = 'var(--surface-default)';
+            msgDiv.style.alignSelf = 'flex-start';
+        }
+
+        if (isHtml) {
+            msgDiv.innerHTML = text;
+        } else {
+            msgDiv.textContent = text;
+        }
+        
+        aiChatHistory.appendChild(msgDiv);
+        aiChatHistory.scrollTop = aiChatHistory.scrollHeight;
+    }
+
+    async function sendTextMsg() {
+        if (!aiChatInput) return;
+        const text = aiChatInput.value.trim();
+        if (!text) return;
+
+        aiChatInput.value = '';
+        appendChatMsg('user', text);
+
+        let lat = null, lng = null;
+        if (chkAttachGPS && chkAttachGPS.checked) {
+            try {
+                const pos = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+                });
+                lat = pos.coords.latitude;
+                lng = pos.coords.longitude;
+            } catch (e) {
+                console.warn('No se pudo obtener ubicación GPS:', e.message);
+            }
+        }
+
+        appendChatMsg('bot', '🤖 Procesando tu reporte de acopio con Gemini...');
+        const botPendingMsg = aiChatHistory.lastChild;
+
+        try {
+            const res = await fetch(`${API_BASE}/api/acopio-chat/text`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, lat, lng })
+            });
+            const data = await res.json();
+            if (data.success) {
+                const reply = formatWebAcopioReply(data);
+                botPendingMsg.innerHTML = reply;
+                showToast('Reporte procesado e indexado en el mapa.', 'success');
+                if (typeof loadCollectionCenters === 'function') {
+                    loadCollectionCenters();
+                }
+            } else {
+                botPendingMsg.textContent = `❌ Error: ${data.error}`;
+            }
+        } catch (err) {
+            console.error(err);
+            botPendingMsg.textContent = '❌ Error de conexión con el servidor de IA.';
+        }
+    }
+
+    async function toggleVoiceRecording() {
+        if (isRecording) {
+            if (mediaRecorder) {
+                mediaRecorder.stop();
+            }
+            if (btnRecordVoice) {
+                btnRecordVoice.textContent = '🎙️';
+                btnRecordVoice.style.background = 'rgba(239, 68, 68, 0.05)';
+                btnRecordVoice.style.borderColor = 'rgba(239, 68, 68, 0.2)';
+            }
+            clearInterval(timerInterval);
+            if (recordingStatus) recordingStatus.style.display = 'none';
+            isRecording = false;
+        } else {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showToast('Tu dispositivo o navegador no soporta grabación de audio.', 'error');
+                return;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioChunks = [];
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.addEventListener('dataavailable', event => {
+                    audioChunks.push(event.data);
+                });
+
+                mediaRecorder.addEventListener('stop', async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/ogg; codecs=opus' });
+                    stream.getTracks().forEach(track => track.stop());
+
+                    appendChatMsg('user', '🎙️ Nota de voz enviada (Procesando...)');
+
+                    let lat = null, lng = null;
+                    if (chkAttachGPS && chkAttachGPS.checked) {
+                        try {
+                            const pos = await new Promise((resolve, reject) => {
+                                navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+                            });
+                            lat = pos.coords.latitude;
+                            lng = pos.coords.longitude;
+                        } catch (e) {
+                            console.warn('No se pudo obtener ubicación GPS:', e.message);
+                        }
+                    }
+
+                    appendChatMsg('bot', '🤖 Procesando nota de voz con Gemini...');
+                    const botPendingMsg = aiChatHistory.lastChild;
+
+                    try {
+                        const url = new URL(`${API_BASE}/api/acopio-chat/audio`);
+                        if (lat) url.searchParams.set('lat', lat);
+                        if (lng) url.searchParams.set('lng', lng);
+
+                        const res = await fetch(url.toString(), {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'audio/ogg' },
+                            body: audioBlob
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            const reply = formatWebAcopioReply(data);
+                            botPendingMsg.innerHTML = reply;
+                            showToast('Mensaje de voz procesado y registrado con éxito.', 'success');
+                            if (typeof loadCollectionCenters === 'function') {
+                                loadCollectionCenters();
+                            }
+                        } else {
+                            botPendingMsg.textContent = `❌ Error: ${data.error}`;
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        botPendingMsg.textContent = '❌ Error al procesar audio en el servidor de IA.';
+                    }
+                });
+
+                mediaRecorder.start();
+                isRecording = true;
+                if (btnRecordVoice) {
+                    btnRecordVoice.textContent = '⏹️';
+                    btnRecordVoice.style.background = 'rgba(239, 68, 68, 0.2)';
+                    btnRecordVoice.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+                }
+                
+                recordingSeconds = 0;
+                if (recordingTimer) recordingTimer.textContent = '0s';
+                if (recordingStatus) recordingStatus.style.display = 'inline-flex';
+                
+                timerInterval = setInterval(() => {
+                    recordingSeconds++;
+                    if (recordingTimer) recordingTimer.textContent = `${recordingSeconds}s`;
+                    if (recordingSeconds >= 60) {
+                        toggleVoiceRecording();
+                        showToast('Límite de 1 minuto de grabación alcanzado.', 'info');
+                    }
+                }, 1000);
+
+            } catch (err) {
+                console.error(err);
+                showToast('Permiso de micrófono denegado o no disponible.', 'error');
+            }
+        }
+    }
+
+    function formatWebAcopioReply(result) {
+        const { action, center, extracted } = result;
+        const supplies = center.supplies || 'Ninguno reportado';
+        const schedule = center.schedule || 'No especificado';
+        const contact = center.contact_info || 'No especificado';
+        
+        let emoji = '🟢';
+        let statusText = 'OPERATIVO';
+        if (center.capacity_status === 'alta_demanda') {
+            emoji = '🟡';
+            statusText = 'ALTA DEMANDA';
+        } else if (center.capacity_status === 'sin_capacidad') {
+            emoji = '🔴';
+            statusText = 'SIN CAPACIDAD';
+        }
+
+        const transText = extracted.transcription 
+            ? `<div style="margin-top: 0.5rem; padding: 0.5rem; background: var(--surface-muted); border-radius: 6px; font-style: italic; border-left: 3px solid var(--border-color); color: var(--text-secondary);">"${extracted.transcription}"</div>`
+            : '';
+
+        if (action === 'UPDATE') {
+            return `✅ <strong>¡Centro Actualizado por IA!</strong><br><br>
+                    <strong>📍 Centro:</strong> ${center.name}<br>
+                    <strong>📍 Dirección:</strong> ${center.location_text}<br>
+                    <strong>📦 Insumos:</strong> ${supplies}<br>
+                    <strong>⏰ Horario:</strong> ${schedule}<br>
+                    <strong>📞 Contacto:</strong> ${contact}<br>
+                    <strong>📊 Estado:</strong> ${emoji} ${statusText}
+                    ${transText}`;
+        } else {
+            return `🆕 <strong>¡Nuevo Centro Registrado por IA!</strong><br><br>
+                    <strong>📍 Centro:</strong> ${center.name}<br>
+                    <strong>📍 Dirección:</strong> ${center.location_text}<br>
+                    <strong>📦 Insumos:</strong> ${supplies}<br>
+                    <strong>⏰ Horario:</strong> ${schedule}<br>
+                    <strong>📞 Contacto:</strong> ${contact}<br>
+                    <strong>📊 Estado:</strong> ${emoji} ${statusText}
+                    ${transText}`;
+        }
+    }
+
+    if (btnSendAiText) {
+        btnSendAiText.addEventListener('click', sendTextMsg);
+    }
+    if (aiChatInput) {
+        aiChatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendTextMsg();
+        });
+    }
+    if (btnRecordVoice) {
+        btnRecordVoice.addEventListener('click', toggleVoiceRecording);
+    }
+
     // ========================================================================
     // WEBMCP TOOL REGISTRATION (AI Agent Web Tools Integration)
     // ========================================================================
