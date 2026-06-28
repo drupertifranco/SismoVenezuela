@@ -28,6 +28,20 @@ const runMigrations = async () => {
       console.log('Nota: Intento de alteración de enum incident_type (se creará si no existe):', err.message);
     }
 
+    // 2. Terminar conexiones concurrentes de la base de datos para liberar bloqueos/locks en DDL
+    try {
+      console.log('Terminando otras conexiones activas en la base de datos para evitar bloqueos de DDL...');
+      await pool.query(`
+        SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity
+        WHERE pid <> pg_backend_pid()
+          AND datname = current_database();
+      `);
+      console.log('Otras conexiones terminadas con éxito.');
+    } catch (err) {
+      console.log('Nota: No se pudieron terminar conexiones activas (probablemente sin privilegios):', err.message);
+    }
+
     // Lee schema.sql del mismo directorio (/database)
     const sqlPath = path.join(__dirname, 'schema.sql');
     const sql = fs.readFileSync(sqlPath, 'utf8');
