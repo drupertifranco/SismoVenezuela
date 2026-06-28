@@ -275,13 +275,13 @@ async function mergeImportedMissingPersonSource(client, existing, person) {
   await client.query(
     `UPDATE public.reports
      SET source_url = CASE
-           WHEN $2 IS NOT NULL AND $2 != '' AND COALESCE(source_url, '') NOT LIKE '%' || $2 || '%' THEN
-             CASE WHEN source_url IS NOT NULL AND source_url != '' THEN source_url || ' | ' || $2 ELSE $2 END
+           WHEN $2::text IS NOT NULL AND $2::text != '' AND COALESCE(source_url, '') NOT LIKE '%' || $2::text || '%' THEN
+             CASE WHEN source_url IS NOT NULL AND source_url != '' THEN source_url || ' | ' || $2::text ELSE $2::text END
            ELSE source_url
          END,
          contact_info = CASE
-           WHEN $3 IS NOT NULL AND $3 != '' AND COALESCE(contact_info, '') NOT LIKE '%' || $3 || '%' THEN
-             CASE WHEN contact_info IS NOT NULL AND contact_info != '' THEN contact_info || ' | ' || $3 ELSE $3 END
+           WHEN $3::text IS NOT NULL AND $3::text != '' AND COALESCE(contact_info, '') NOT LIKE '%' || $3::text || '%' THEN
+             CASE WHEN contact_info IS NOT NULL AND contact_info != '' THEN contact_info || ' | ' || $3::text ELSE $3::text END
            ELSE contact_info
          END
      WHERE id = $1;`,
