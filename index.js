@@ -681,11 +681,11 @@ function startMissingPersonsSyncScheduler() {
 
 // Endpoint: Listar centros de acopio activos para el mapa comunitario (Acceso Público)
 app.get('/api/collection-centers', async (req, res) => {
-  const { active = 'true', limit = 100, offset = 0 } = req.query;
+  const { active = 'true', limit = 1000, offset = 0 } = req.query;
 
   const values = [];
   const conditions = [];
-  const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 200);
+  const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 1000, 1), 5000);
   const parsedOffset = Math.max(parseInt(offset, 10) || 0, 0);
 
   let queryText = `
@@ -1012,7 +1012,7 @@ app.post('/api/reports', async (req, res) => {
 
 // Endpoint 2: Listar reportes con filtros y agregación de personas desaparecidas (Acceso Público)
 app.get('/api/reports', async (req, res) => {
-  const { type, urgency, is_resolved, state, limit = 50, offset = 0 } = req.query;
+  const { type, urgency, is_resolved, state, limit = 1000, offset = 0 } = req.query;
   
   let queryText = `
     SELECT r.*, 
@@ -1048,8 +1048,9 @@ app.get('/api/reports', async (req, res) => {
     queryText += ' WHERE ' + conditions.join(' AND ');
   }
 
+  const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 1000, 1), 5000);
   queryText += ' GROUP BY r.id';
-  queryText += ` ORDER BY r.created_at DESC LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)};`;
+  queryText += ` ORDER BY r.created_at DESC LIMIT ${parsedLimit} OFFSET ${parseInt(offset)};`;
 
   try {
     const result = await pool.query(queryText, values);
