@@ -47,6 +47,9 @@ const MISSING_PERSONS_SYNC_API_KEY = process.env.MISSING_PERSONS_SYNC_API_KEY ||
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
+  max: 5,                       // Conexiones máximas por instancia de contenedor
+  idleTimeoutMillis: 10000,     // Cerrar conexiones inactivas tras 10 segundos
+  connectionTimeoutMillis: 2000 // Abortar consulta si tarda más de 2 segundos en conectar
 });
 
 const missingPersonsSyncState = {

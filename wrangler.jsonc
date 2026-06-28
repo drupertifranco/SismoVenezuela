@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sismo-telemetry-metrics",
+  "main": "cloudflare-worker.js",
+  "compatibility_date": "2024-03-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "routes": [
+    {
+      "pattern": "api.vnzl.technolink.tech",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "BACKEND_API_URL": "https://ayuda-venezuela-backend-291864207498.us-central1.run.app",
+    "GA_MEASUREMENT_ID": "G-XXXXXXXXXX",
+    "GA_PROPERTY_ID": "498305291"
+  },
+  "env": {
+    "staging": {
+      "name": "sismo-telemetry-metrics-staging",
+      "routes": [],
+      "vars": {
+        "BACKEND_API_URL": "https://staging-backend.technolink.tech",
+        "GA_MEASUREMENT_ID": "G-XXXXXXXXXX",
+        "GA_PROPERTY_ID": "498305291"
+      }
+    }
+  }
+}
