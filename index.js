@@ -1617,14 +1617,179 @@ app.get('/api/admin/deploy-function', async (req, res) => {
   try {
     client = await pgPool.connect();
     
-    const sqlPath = path.join(__dirname, 'database', 'schema.sql');
-    const sql = fs.readFileSync(sqlPath, 'utf8');
-    
-    const startIdx = sql.indexOf('CREATE OR REPLACE FUNCTION public.submit_emergency_report');
-    if (startIdx === -1) {
-      return res.status(400).send('No se encontró la función en schema.sql');
-    }
-    const funcSql = sql.substring(startIdx);
+    const funcSql = `
+CREATE OR REPLACE FUNCTION public.submit_emergency_report(payload JSONB)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $func$
+DECLARE
+    v_report_id UUID;
+    v_duplicate_id UUID;
+    v_type TEXT;
+    v_urgency TEXT;
+    v_title TEXT;
+    v_source_url TEXT;
+    v_description TEXT;
+    v_location_text TEXT;
+    v_lat DOUBLE PRECISION;
+    v_lng DOUBLE PRECISION;
+    v_contact_info TEXT;
+    v_missing_person JSONB;
+    v_mp_name TEXT;
+    v_mp_description TEXT;
+    v_mp_last_seen TEXT;
+    v_mp_existing_id UUID;
+    v_status TEXT;
+    v_state TEXT;
+BEGIN
+    -- 1. Extracción de variables
+    v_type := payload->>'type';
+    v_urgency := payload->>'urgency';
+    v_title := payload->>'title';
+    v_source_url := payload->>'source_url';
+    v_description := payload->>'description';
+    v_location_text := payload->>'location_text';
+    v_lat := (payload->>'lat')::DOUBLE PRECISION;
+    v_lng := (payload->>'lng')::DOUBLE PRECISION;
+    v_contact_info := payload->>'contact_info';
+    v_state := payload->>'state';
+    v_missing_person := payload->'missing_person';
+
+    -- 2. Validaciones básicas obligatorias
+    IF v_type IS NULL OR v_type = '' THEN
+        RAISE EXCEPTION 'El campo "type" es requerido.';
+    END IF;
+    IF v_urgency IS NULL OR v_urgency = '' THEN
+        RAISE EXCEPTION 'El campo "urgency" es requerido.';
+    END IF;
+    IF v_description IS NULL OR v_description = '' THEN
+        RAISE EXCEPTION 'El campo "description" es requerido.';
+    END IF;
+    IF v_location_text IS NULL OR v_location_text = '' THEN
+        RAISE EXCEPTION 'El campo "location_text" es requerido.';
+    END IF;
+
+    -- Validaciones de enums
+    IF NOT (v_type IN ('desaparecido', 'emergencia_medica', 'rescate_estructural', 'suministros', 'sin_comunicacion')) THEN
+        RAISE EXCEPTION 'Tipo de incidente inválido: %', v_type;
+    END IF;
+    IF NOT (v_urgency IN ('critico', 'alto', 'moderado')) THEN
+        RAISE EXCEPTION 'Nivel de urgencia inválido: %', v_urgency;
+    END IF;
+
+    -- 3. Búsqueda de Duplicados en Reportes Activos (No Resueltos)
+    SELECT id INTO v_duplicate_id
+    FROM public.reports r
+    WHERE type = v_type::incident_type
+      AND is_resolved = false
+      AND (
+        (v_type != 'desaparecido' AND (
+            (v_lat IS NOT NULL AND v_lng IS NOT NULL AND lat IS NOT NULL AND lng IS NOT NULL AND
+             (6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(v_lat)) * cos(radians(lat)) * cos(radians(lng) - radians(v_lng)) + sin(radians(v_lat)) * sin(radians(lat))))) < 0.5)
+            OR (similarity(description, v_description) > 0.4)
+            OR (similarity(location_text, v_location_text) > 0.4)
+        ))
+        OR
+        (v_type = 'desaparecido' AND v_mp_name IS NOT NULL AND EXISTS (
+            SELECT 1 FROM public.missing_persons mp
+            WHERE mp.report_id = r.id
+              AND similarity(mp.full_name, v_mp_name) > 0.72
+        ))
+      )
+    ORDER BY r.created_at DESC
+    LIMIT 1;
+
+    -- 4. Bifurcación: Fusión o Inserción
+    IF v_duplicate_id IS NOT NULL THEN
+        v_report_id := v_duplicate_id;
+        v_status := 'merged';
+
+        UPDATE public.reports
+        SET description = description || E'\\n\\n[Actualización ' || to_char(timezone('utc', now()), 'YYYY-MM-DD HH24:MI:SS') || ' UTC]: ' || v_description,
+            contact_info = CASE 
+                WHEN v_contact_info IS NOT NULL AND v_contact_info != '' THEN 
+                    COALESCE(contact_info, '') || ' | ' || v_contact_info
+                ELSE contact_info 
+            END,
+            source_url = CASE 
+                WHEN v_source_url IS NOT NULL AND v_source_url != '' AND COALESCE(source_url, '') NOT LIKE '%' || v_source_url || '%' THEN 
+                    CASE WHEN source_url IS NOT NULL AND source_url != '' THEN source_url || ' | ' || v_source_url ELSE v_source_url END
+                ELSE source_url
+            END
+        WHERE id = v_duplicate_id;
+
+    ELSE
+        v_status := 'created';
+        INSERT INTO public.reports (
+            type,
+            urgency,
+            title,
+            source_url,
+            description,
+            location_text,
+            lat,
+            lng,
+            contact_info,
+            state
+        ) VALUES (
+            v_type::incident_type,
+            v_urgency::urgency_level,
+            v_title,
+            v_source_url,
+            v_description,
+            v_location_text,
+            v_lat,
+            v_lng,
+            v_contact_info,
+            v_state
+        ) RETURNING id INTO v_report_id;
+    END IF;
+
+    -- 5. Procesamiento de Persona Desaparecida
+    IF v_type = 'desaparecido' OR v_missing_person IS NOT NULL THEN
+        IF v_missing_person IS NULL THEN
+            RAISE EXCEPTION 'Se requiere el nodo "missing_person" para incidentes de tipo desaparecido.';
+        END IF;
+
+        v_mp_name := v_missing_person->>'full_name';
+        v_mp_description := v_missing_person->>'physical_description';
+        v_mp_last_seen := v_missing_person->>'last_seen_location';
+
+        IF v_mp_name IS NULL OR v_mp_name = '' THEN
+            RAISE EXCEPTION 'El campo "missing_person.full_name" es obligatorio.';
+        END IF;
+
+        IF v_status = 'merged' THEN
+            SELECT id INTO v_mp_existing_id
+            FROM public.missing_persons
+            WHERE report_id = v_report_id
+              AND similarity(full_name, v_mp_name) > 0.6;
+        END IF;
+
+        IF v_mp_existing_id IS NULL THEN
+            INSERT INTO public.missing_persons (
+                report_id,
+                full_name,
+                physical_description,
+                last_seen_location
+            ) VALUES (
+                v_report_id,
+                v_mp_name,
+                v_mp_description,
+                v_mp_last_seen
+            );
+        END IF;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'report_id', v_report_id,
+        'status', v_status
+    );
+END;
+$func$;
+    `;
     
     await client.query(funcSql);
     return res.send('Función creada/actualizada exitosamente.');
