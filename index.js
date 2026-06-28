@@ -1621,6 +1621,7 @@ app.get('/api/admin/force-cleanup', async (req, res) => {
   try {
     client = await pgPool.connect();
     await client.query('BEGIN;');
+    await client.query("SET LOCAL app.role = 'authenticated';");
 
     // 1. Borrar todas las personas asociadas a los reportes a limpiar
     const delMP = await client.query(`
