@@ -1622,25 +1622,32 @@ app.get('/api/admin/force-cleanup', async (req, res) => {
     client = await pgPool.connect();
     await client.query('BEGIN;');
 
-    // 1. Borrar todas las personas asociadas a los reportes con hosp_mpc en source_url
-    await client.query(`
+    // 1. Borrar todas las personas asociadas a los reportes a limpiar
+    const delMP = await client.query(`
       DELETE FROM public.missing_persons 
       WHERE report_id IN (
         SELECT id FROM public.reports 
         WHERE source_url LIKE '%hosp_mpc%'
+           OR location_text = 'Hospital Miguel Pérez Carreño (La Yaguara)'
+           OR title LIKE '%Adriana Vastidas%'
       );
     `);
+    console.log(`[Limpieza] Personas desaparecidas eliminadas: ${delMP.rowCount}`);
 
     // 2. Borrar los reportes maestros
-    await client.query(`
+    const delR = await client.query(`
       DELETE FROM public.reports 
-      WHERE source_url LIKE '%hosp_mpc%';
+      WHERE source_url LIKE '%hosp_mpc%'
+         OR location_text = 'Hospital Miguel Pérez Carreño (La Yaguara)'
+         OR title LIKE '%Adriana Vastidas%';
     `);
+    console.log(`[Limpieza] Reportes eliminados: ${delR.rowCount}`);
 
     await client.query('COMMIT;');
-    return res.status(200).send('Limpieza forzada completada exitosamente.');
+    return res.status(200).send(`Limpieza forzada completada. Reportes eliminados: ${delR.rowCount}, Personas eliminadas: ${delMP.rowCount}`);
   } catch (err) {
     if (client) await client.query('ROLLBACK;');
+    console.error(`Error en limpieza forzada: ${err.message}`);
     return res.status(500).send(`Error en limpieza forzada: ${err.message}`);
   } finally {
     if (client) client.release();
