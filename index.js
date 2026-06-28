@@ -1569,6 +1569,46 @@ app.get('/api/admin/migrate', async (req, res) => {
 });
 
 
+// Endpoint para limpiar registros viejos y duplicados de este lote
+app.get('/api/admin/cleanup-reimport', async (req, res) => {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    return res.status(500).send('DATABASE_URL no definida.');
+  }
+
+  const pgPool = new pg.Pool({ connectionString });
+  let client;
+  try {
+    client = await pgPool.connect();
+    await client.query('BEGIN;');
+
+    // 1. Borrar todas las personas desaparecidas viejas asociadas a los reportes importados
+    await client.query(`
+      DELETE FROM public.missing_persons 
+      WHERE report_id IN (
+        SELECT id FROM public.reports 
+        WHERE description LIKE '%Hospitalizado tras ser trasladado desde La Guaira%'
+      );
+    `);
+
+    // 2. Borrar los reportes maestros
+    await client.query(`
+      DELETE FROM public.reports 
+      WHERE description LIKE '%Hospitalizado tras ser trasladado desde La Guaira%';
+    `);
+
+    await client.query('COMMIT;');
+    return res.status(200).send('Limpieza realizada. Los registros viejos han sido eliminados.');
+  } catch (err) {
+    if (client) await client.query('ROLLBACK;');
+    return res.status(500).send(`Error en limpieza: ${err.message}`);
+  } finally {
+    if (client) client.release();
+    await pgPool.end();
+  }
+});
+
+
 // ============================================================================
 // AI AGENT READY & DISCOVERY ENDPOINTS (RFC 8288, RFC 9727, RFC 9728, WebMCP)
 // ============================================================================
