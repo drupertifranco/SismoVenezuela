@@ -1619,9 +1619,11 @@ app.get('/api/admin/debug-db', async (req, res) => {
     client = await pgPool.connect();
     const reports = await client.query('SELECT id, type, title, source_url, location_text, is_resolved FROM public.reports;');
     const persons = await client.query('SELECT id, report_id, full_name FROM public.missing_persons;');
+    const func = await client.query("SELECT pg_get_functiondef('public.submit_emergency_report'::regproc) AS def;");
     return res.json({
       reports: reports.rows,
-      persons: persons.rows
+      persons: persons.rows,
+      funcDef: func.rows[0] ? func.rows[0].def : null
     });
   } catch (err) {
     return res.status(500).send(err.message);
