@@ -1850,7 +1850,9 @@ app.get('/api/admin/force-cleanup', async (req, res) => {
       WHERE report_id IN (
         SELECT id FROM public.reports 
         WHERE source_url LIKE '%hosp_mpc%'
+           OR source_url LIKE '%hosp_hdl%'
            OR location_text = 'Hospital Miguel Pérez Carreño (La Yaguara)'
+           OR location_text = 'Hospital Domingo Luciani'
            OR title LIKE '%Adriana Vastidas%'
       );
     `);
@@ -1860,7 +1862,9 @@ app.get('/api/admin/force-cleanup', async (req, res) => {
     const delR = await client.query(`
       DELETE FROM public.reports 
       WHERE source_url LIKE '%hosp_mpc%'
+         OR source_url LIKE '%hosp_hdl%'
          OR location_text = 'Hospital Miguel Pérez Carreño (La Yaguara)'
+         OR location_text = 'Hospital Domingo Luciani'
          OR title LIKE '%Adriana Vastidas%';
     `);
     console.log(`[Limpieza] Reportes eliminados: ${delR.rowCount}`);
