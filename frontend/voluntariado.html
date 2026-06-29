@@ -97,15 +97,13 @@
                 <div class="form-group" style="margin-bottom: 0.75rem;">
                     <input type="text" id="emergencyPhoneSearch" placeholder="Filtra teléfonos (ej: bomberos)..." style="min-height: 38px; font-size: 0.8rem;" />
                 </div>
+                <div class="filter-chips-container" style="display: flex; gap: 0.35rem; margin-bottom: 0.75rem; overflow-x: auto; scrollbar-width: none;">
+                    <button type="button" class="filter-chip phone-filter-btn active" data-type="all" style="min-height: 28px; padding: 0.25rem 0.5rem; font-size: 0.7rem;">Todos</button>
+                    <button type="button" class="filter-chip phone-filter-btn" data-type="bomberos" style="min-height: 28px; padding: 0.25rem 0.5rem; font-size: 0.7rem;">🚒 Bomberos</button>
+                    <button type="button" class="filter-chip phone-filter-btn" data-type="rescate" style="min-height: 28px; padding: 0.25rem 0.5rem; font-size: 0.7rem;">🛡️ Prot. Civil</button>
+                </div>
                 <div id="emergencyPhonesList" style="display: flex; flex-direction: column; gap: 0.4rem; max-height: 200px; overflow-y: auto;">
-                    <div class="phone-item" data-type="bomberos" data-search="bomberos metropolitanos" style="background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.4rem 0.5rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">
-                        <span style="font-weight: 600;">🚒 Bomberos Metrop.</span>
-                        <a href="tel:02125454545" style="color: var(--color-critical); font-weight: 700; text-decoration: none;">545.45.45</a>
-                    </div>
-                    <div class="phone-item" data-type="pc" data-search="proteccion civil nacional 0800" style="background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.4rem 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem;">
-                        <span style="font-weight: 600;">🛡️ Prot. Civil Nacional</span>
-                        <a href="tel:08005588427" style="color: var(--color-info); font-weight: 700; text-decoration: none;">0800-5588427</a>
-                    </div>
+                    <!-- Cargado dinámicamente desde app.js -->
                 </div>
             </div>
         </aside>
