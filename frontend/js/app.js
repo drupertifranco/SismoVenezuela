@@ -1412,6 +1412,9 @@ function renderConnectivityMap(statusData) {
         const colors = getStatusColors(item.status, isActive);
         const strokeWidth = isActive ? '3.5' : '1.5';
         const radius = isActive ? 16 : 14;
+        
+        // Agregar pulso animado para nodos degradados o caídos
+        const pulseClass = (item.status === 'caido' || item.status === 'degradado') ? 'map-node-pulse' : '';
 
         const gaDataForState = gaMetricsData ? gaMetricsData[item.state] : null;
         const activeUsersText = gaDataForState ? `\n👥 Usuarios Activos GA4: ${gaDataForState.active_users}` : '';
@@ -1420,6 +1423,7 @@ function renderConnectivityMap(statusData) {
             <g class="map-tile" onclick="toggleStateFilter('${escapeHTML(item.state)}')" style="cursor: pointer;">
                 <title>${escapeHTML(item.state)}: ${item.status.toUpperCase()} (Latencia: ${item.avg_latency || 'N/A'}ms)${activeUsersText}</title>
                 <circle cx="${coord.x}" cy="${coord.y}" r="${radius}" 
+                        class="${pulseClass}"
                         fill="${colors.fill}" stroke="${colors.border}" stroke-width="${strokeWidth}" 
                         style="transform-origin: ${coord.x}px ${coord.y}px;" />
                 <text x="${coord.x}" y="${coord.y + 3}" 
@@ -1431,6 +1435,9 @@ function renderConnectivityMap(statusData) {
 
     svgContent += `</svg>`;
     mapContainer.innerHTML = svgContent;
+    
+    // Actualizar también el panel de detalles del estado seleccionado (si existe)
+    updateStateTelemetryDetail();
 }
 
 function renderConnectivityGrid(statusData) {
@@ -1461,6 +1468,74 @@ function renderConnectivityGrid(statusData) {
     }).join('');
 }
 
+function updateStateTelemetryDetail() {
+    const stateDetailContent = document.getElementById('stateDetailContent');
+    if (!stateDetailContent) return;
+
+    if (currentStateFilter) {
+        const item = lastConnectivityData ? lastConnectivityData.find(x => x.state === currentStateFilter) : null;
+        const statusLabels = {
+            estable: '🟢 Estable (Excelente)',
+            degradado: '🟡 Degradado / Inestable',
+            caido: '🔴 Caído / Interrumpido',
+            sin_datos: '⚫ Sin datos / Desconectado'
+        };
+        const statusColor = item && item.status === 'estable' ? 'var(--color-success)' :
+                            item && item.status === 'degradado' ? 'var(--color-moderate)' :
+                            item && item.status === 'caido' ? 'var(--color-critical)' : 'var(--text-secondary)';
+        
+        const latencyVal = item && item.avg_latency !== null ? `${item.avg_latency} ms` : 'N/A';
+        const pingVal = item && item.report_count ? `${item.report_count} pings` : '0 pings';
+        
+        const gaData = gaMetricsData ? gaMetricsData[currentStateFilter] : null;
+        const gaUsers = gaData ? gaData.active_users : 0;
+        
+        const totalReportsState = allLoadedReports ? allLoadedReports.filter(r => r.state === currentStateFilter).length : 0;
+        
+        stateDetailContent.innerHTML = `
+            <div style="text-align: left; display: flex; flex-direction: column; gap: 0.85rem;">
+                <div style="font-size: 1.1rem; font-weight: 800; color: var(--text-primary); border-bottom: 1px dashed var(--border-color); padding-bottom: 0.35rem; display: flex; justify-content: space-between; align-items: center;">
+                    <span>📍 ${currentStateFilter}</span>
+                    <button type="button" onclick="window.toggleStateFilter('${escapeHTML(currentStateFilter)}')" style="background: none; border: none; font-size: 1.15rem; cursor: pointer; padding: 0.2rem; color: var(--text-secondary);">&times;</button>
+                </div>
+                <div>
+                    <div style="font-weight: 700; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Estado de la Red</div>
+                    <div style="font-size: 0.95rem; font-weight: 700; color: ${statusColor}; margin-top: 0.15rem;">
+                        ${statusLabels[item ? item.status : 'sin_datos'] || statusLabels.sin_datos}
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <div>
+                        <div style="font-weight: 700; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Latencia Promedio</div>
+                        <div style="font-size: 1.1rem; font-weight: 800; color: var(--text-primary); margin-top: 0.15rem;">${latencyVal}</div>
+                    </div>
+                    <div>
+                        <div style="font-weight: 700; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Telemetría Recibida</div>
+                        <div style="font-size: 1.1rem; font-weight: 800; color: var(--text-primary); margin-top: 0.15rem;">${pingVal}</div>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+                    <div>
+                        <div style="font-weight: 700; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Usuarios Activos (GA4)</div>
+                        <div style="font-size: 1.1rem; font-weight: 800; color: var(--color-info); margin-top: 0.15rem;">👥 ${gaUsers}</div>
+                    </div>
+                    <div>
+                        <div style="font-weight: 700; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Alertas Humanitarias</div>
+                        <div style="font-size: 1.1rem; font-weight: 800; color: var(--color-critical); margin-top: 0.15rem;">🚨 ${totalReportsState}</div>
+                    </div>
+                </div>
+                <div style="background: rgba(59, 130, 246, 0.05); padding: 0.5rem; border-radius: 6px; border: 1px solid rgba(59, 130, 246, 0.15); font-size: 0.75rem; text-align: center; color: var(--color-info); font-weight: 600; margin-top: 0.5rem;">
+                    💡 Filtrando incidentes activos abajo.
+                </div>
+            </div>
+        `;
+    } else {
+        stateDetailContent.innerHTML = `
+            Selecciona un estado en el mapa o en la lista de abajo para ver su telemetría detallada, pings de red y reportes activos de ayuda.
+        `;
+    }
+}
+
 window.toggleStateFilter = function(stateName) {
     if (currentStateFilter === stateName) {
         currentStateFilter = null;
@@ -1470,6 +1545,7 @@ window.toggleStateFilter = function(stateName) {
     
     loadReports();
     loadConnectivityStatus();
+    updateStateTelemetryDetail();
     
     showToast(
         currentStateFilter 
@@ -1641,45 +1717,92 @@ async function loadRecentSeismicEvents() {
     }
 }
 
-// Buscador y filtros de teléfonos de emergencia
-const searchInput = document.getElementById('emergencyPhoneSearch');
-const filterButtons = document.querySelectorAll('.phone-filter-btn');
-const phoneItems = document.querySelectorAll('.phone-item');
+// Buscador, filtros y base de datos completa de teléfonos de emergencia
+const emergencyPhonesDb = [
+    { type: "bomberos", name: "🚒 Bomberos Antímano", tel: "02124722054", formatted: "(0212) 472.20.54", search: "bomberos antimano caracas" },
+    { type: "bomberos", name: "🚒 Bomberos Catia la Mar", tel: "02123519966", formatted: "(0212) 351.99.66", search: "bomberos catia la mar vargas la guaira" },
+    { type: "bomberos", name: "🚒 Bomberos Chacao", tel: "02122653261", formatted: "(0212) 265.32.61", search: "bomberos chacao caracas miranda" },
+    { type: "bomberos", name: "🚒 Bomberos del Este (El Cafetal)", tel: "02129874334", formatted: "(0212) 987.43.34 / 985.50.60", search: "bomberos del este el cafetal baruta miranda" },
+    { type: "bomberos", name: "🚒 Bomberos Sucre", tel: "02129853640", formatted: "(0212) 985.36.40", search: "bomberos sucre petare miranda" },
+    { type: "bomberos", name: "🚒 Bomberos El Cafetal", tel: "02129852977", formatted: "(0212) 985.36.40 / 985.29.77", search: "bomberos el cafetal baruta miranda" },
+    { type: "bomberos", name: "🚒 Bomberos El Paraíso", tel: "02124810961", formatted: "(0212) 481.09.61", search: "bomberos el paraiso caracas libertador" },
+    { type: "bomberos", name: "🚒 Bomberos El Valle", tel: "02126720175", formatted: "(0212) 672.01.75 / 672.06.36", search: "bomberos el valle caracas" },
+    { type: "bomberos", name: "🚒 Bomberos La Guaira", tel: "02123327620", formatted: "(0212) 332.76.20 / 331.04.45", search: "bomberos la guaira" },
+    { type: "bomberos", name: "🚒 Bomberos La Trinidad", tel: "02129434361", formatted: "(0212) 943.43.61", search: "bomberos la trinidad baruta" },
+    { type: "bomberos", name: "🚒 Bomberos La Urbina", tel: "02122416641", formatted: "(0212) 241.66.41", search: "bomberos la urbina sucre petare" },
+    { type: "bomberos", name: "🚒 Bomberos Metropolitanos", tel: "02125454545", formatted: "(0212) 545.45.45", search: "bomberos metropolitanos caracas cac" },
+    { type: "bomberos", name: "🚒 Bomberos Miranda", tel: "02122356967", formatted: "(0212) 235.69.67", search: "bomberos miranda los teques" },
+    { type: "bomberos", name: "🚒 Bomberos Plaza Venezuela", tel: "02127930039", formatted: "(0212) 793.00.39 / 793.64.57", search: "bomberos plaza venezuela libertador caracas" },
+    { type: "bomberos", name: "🚒 Bomberos San Bernardino", tel: "02125779209", formatted: "(0212) 577.92.09", search: "bomberos san bernardino caracas" },
+    { type: "rescate", name: "🛡️ Protección Civil (Nacional)", tel: "08005588427", formatted: "0800-5588427 | 0800-2668446 | 0800-2624368", search: "proteccion civil nacional pc 0800" },
+    { type: "rescate", name: "🛡️ Instituto de Protección Civil (IPC)", tel: "02126318662", formatted: "631.86.62 / 631.90.58 / 662.84.76 / 662.32.05", search: "instituto de proteccion civil ipc caracas miranda" },
+    { type: "rescate", name: "🛡️ Defensa Civil Alcaldía Mayor", tel: "02126626759", formatted: "(0212) 662.67.59 / 662.32.05", search: "defensa civil alcaldia mayor caracas" },
+    { type: "rescate", name: "🛡️ Defensa Civil Nacional", tel: "080028326", formatted: "0800-28326 | 0800-24845 | (0212) 483.98.05 / 662.22.52", search: "defensa civil nacional 0800" },
+    { type: "salud", name: "🏥 Cruz Roja Venezolana", tel: "02125782187", formatted: "(0212) 578.21.87", search: "cruz roja venezolana salud primeros auxilios medicos caracas" },
+    { type: "salud", name: "🏥 Hospital Clínico Universitario", tel: "02126067111", formatted: "(0212) 606.71.11", search: "hospital clinico universitario hcu ucv salud emergencias medicas" },
+    { type: "salud", name: "🏥 Hospital Vargas de Caracas", tel: "02128608362", formatted: "(0212) 860.83.62", search: "hospital vargas salud emergencias medicas caracas" }
+];
 
-function filterPhones() {
-    if (!searchInput) return;
-    const query = searchInput.value.toLowerCase().trim();
-    const activeBtn = document.querySelector('.phone-filter-btn.active');
-    const activeFilter = activeBtn ? activeBtn.getAttribute('data-type') : 'all';
+function initEmergencyPhones() {
+    const listContainer = document.getElementById('emergencyPhonesList');
+    if (!listContainer) return;
 
-    phoneItems.forEach(item => {
-        const itemType = item.getAttribute('data-type');
-        const searchTag = item.getAttribute('data-search') || '';
-        
-        const matchesSearch = searchTag.includes(query);
-        const matchesType = activeFilter === 'all' || itemType === activeFilter;
+    // Renderizar la lista completa dinámicamente
+    listContainer.innerHTML = emergencyPhonesDb.map(phone => {
+        // Enlazar el primer número telefónico como href principal
+        const firstNum = phone.tel;
+        return `
+            <div class="phone-item" data-type="${phone.type}" data-search="${escapeHTML(phone.search)}" style="background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.6rem; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; font-size: 0.75rem;">
+                <span style="font-weight: 600; color: var(--text-primary);">${escapeHTML(phone.name)}</span>
+                <a href="tel:${firstNum}" style="color: ${phone.type === 'bomberos' ? 'var(--color-critical)' : 'var(--color-info)'}; font-weight: 700; text-decoration: none; white-space: nowrap;">
+                    ${escapeHTML(phone.formatted)}
+                </a>
+            </div>
+        `;
+    }).join('');
 
-        if (matchesSearch && matchesType) {
-            item.style.display = 'flex';
-        } else {
-            item.style.display = 'none';
-        }
-    });
-}
+    const searchInput = document.getElementById('emergencyPhoneSearch');
+    const filterButtons = document.querySelectorAll('.phone-filter-btn');
+    const phoneItems = listContainer.querySelectorAll('.phone-item');
 
-if (searchInput) {
-    searchInput.addEventListener('input', filterPhones);
-}
+    function filterPhones() {
+        if (!searchInput) return;
+        const query = searchInput.value.toLowerCase().trim();
+        const activeBtn = document.querySelector('.phone-filter-btn.active');
+        const activeFilter = activeBtn ? activeBtn.getAttribute('data-type') : 'all';
 
-if (filterButtons.length > 0) {
-    filterButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            filterButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            filterPhones();
+        phoneItems.forEach(item => {
+            const itemType = item.getAttribute('data-type');
+            const searchTag = item.getAttribute('data-search') || '';
+            
+            const matchesSearch = searchTag.includes(query);
+            const matchesType = activeFilter === 'all' || itemType === activeFilter;
+
+            if (matchesSearch && matchesType) {
+                item.style.display = 'flex';
+            } else {
+                item.style.display = 'none';
+            }
         });
-    });
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('input', filterPhones);
+    }
+
+    if (filterButtons.length > 0) {
+        filterButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                filterButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                filterPhones();
+            });
+        });
+    }
 }
+
+// Inicializar teléfonos al cargar
+initEmergencyPhones();
 
 // ========================================================================
 // AI CHAT & VOICE ASSISTANT FOR COLLECTION CENTERS

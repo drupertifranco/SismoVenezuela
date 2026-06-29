@@ -221,20 +221,41 @@
                     </span>
                 </div>
                 
-                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.45;">
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; line-height: 1.45;">
                     Estado real de la red medido de forma anónima desde los navegadores de los voluntarios en cada estado. Haz clic en un estado del mapa o de la lista para filtrar los incidentes de esa región.
                 </p>
 
-                <div style="display: grid; grid-template-columns: 1fr; gap: 1.5rem; align-items: center;">
-                    <!-- Mapa SVG -->
-                    <div id="connectivityMapContainer" style="background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; width: 100%; display: flex; align-items: center; justify-content: center;">
-                        <div style="color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 2rem;">Cargando mapa de red nacional...</div>
+                <div style="display: grid; grid-template-columns: 1fr; gap: 1rem; margin-top: 1rem; margin-bottom: 1.25rem;">
+                    <!-- Leyenda interactiva -->
+                    <div style="display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.75rem; background: var(--surface-muted); border: 1px solid var(--border-color); padding: 0.5rem 0.75rem; border-radius: 8px;">
+                        <span style="font-weight: 600; color: var(--text-secondary);">Leyenda:</span>
+                        <span style="display: inline-flex; align-items: center; gap: 0.25rem;">🟢 Excelente (&lt;100ms)</span>
+                        <span style="display: inline-flex; align-items: center; gap: 0.25rem;">🟡 Inestable (100-500ms)</span>
+                        <span style="display: inline-flex; align-items: center; gap: 0.25rem;">🔴 Caído / Crítico (&gt;500ms)</span>
+                        <span style="display: inline-flex; align-items: center; gap: 0.25rem;">⚫ Sin datos</span>
                     </div>
-                    
-                    <!-- Grid de Estados -->
-                    <div id="connectivityGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.5rem; max-height: 180px; overflow-y: auto; padding-right: 0.25rem;">
-                        <!-- Inyectado dinámicamente -->
+
+                    <div class="connectivity-layout-wrapper" style="display: grid; grid-template-columns: 1.25fr 0.75fr; gap: 1.25rem; align-items: start;">
+                        <!-- Mapa SVG -->
+                        <div id="connectivityMapContainer" style="background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; display: flex; align-items: center; justify-content: center; position: relative;">
+                            <div style="color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 2rem;">Cargando mapa de red nacional...</div>
+                        </div>
+
+                        <!-- Panel de Detalle Derecho -->
+                        <div id="stateTelemetryDetailPanel" style="background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; min-height: 250px;">
+                            <h4 style="font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--text-primary); border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+                                📊 Detalle de Conectividad
+                            </h4>
+                            <div id="stateDetailContent" style="display: flex; flex-direction: column; gap: 0.75rem; flex: 1; justify-content: center; font-size: 0.8rem; color: var(--text-secondary); text-align: center;">
+                                Selecciona un estado en el mapa o en la lista de abajo para ver su telemetría detallada, pings de red y reportes activos de ayuda.
+                            </div>
+                        </div>
                     </div>
+                </div>
+                
+                <!-- Grid de Estados -->
+                <div id="connectivityGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.5rem; max-height: 180px; overflow-y: auto; padding-right: 0.25rem;">
+                    <!-- Inyectado dinámicamente -->
                 </div>
             </div>
 

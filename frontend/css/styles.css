@@ -1062,3 +1062,28 @@ textarea {
         display: none; /* Se maneja con el mobile-quick-actions inferior */
     }
 }
+
+/* Upgraded Connectivity Map and Layout Wrapper */
+.connectivity-layout-wrapper {
+    display: grid;
+    grid-template-columns: 1.25fr 0.75fr;
+    gap: 1.25rem;
+    align-items: start;
+}
+
+@media (max-width: 768px) {
+    .connectivity-layout-wrapper {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* Node pulse animations for degraded or down nodes */
+@keyframes mapNodePulse {
+    0% { transform: scale(1); opacity: 0.9; }
+    50% { transform: scale(1.08); opacity: 1; stroke-width: 3.5; }
+    100% { transform: scale(1); opacity: 0.9; }
+}
+
+.map-node-pulse {
+    animation: mapNodePulse 2.5s infinite ease-in-out;
+}
