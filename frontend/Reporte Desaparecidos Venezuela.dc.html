@@ -1906,6 +1906,33 @@
                     <span class="counter-pill" id="centersCount">Cargando...</span>
                 </div>
 
+                <!-- BUSCADOR DE ACOPIO PREMIUM (Ancho completo arriba de la cuadrícula) -->
+                <div class="search-panel-container" style="margin: 1rem 1rem 1.25rem 1rem; padding: 1.25rem; background: rgba(59, 130, 246, 0.04); border: 1px solid rgba(59, 130, 246, 0.15); border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);">
+                    
+                    <label for="centerSearchInput" style="font-weight: 700; font-size: 0.95rem; margin-bottom: 0.65rem; display: flex; align-items: center; justify-content: space-between; color: var(--text-primary);">
+                        <span style="display: flex; align-items: center; gap: 0.45rem;">🔍 Buscador Inteligente de Acopio</span>
+                        <span id="searchResultCount" style="font-size: 0.75rem; font-weight: 600; color: #3b82f6;">Cargando...</span>
+                    </label>
+                    
+                    <div class="search-input-wrapper" style="position: relative; display: flex; align-items: center; width: 100%;">
+                        <input type="text" id="centerSearchInput" placeholder="Busca un centro de acopio por nombre (ej: Candelaria), sector (ej: Chacao) o insumo que requiera (ej: agua, medicinas)..." style="width: 100%; min-height: 46px; padding: 0.5rem 2.75rem 0.5rem 1.25rem; font-size: 0.95rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-primary); transition: all 0.2s;" />
+                        
+                        <button id="btnClearSearch" type="button" style="position: absolute; right: 12px; background: none; border: none; color: var(--text-secondary); font-size: 1.2rem; cursor: pointer; display: none; padding: 0.25rem; line-height: 1;">
+                            ✕
+                        </button>
+                    </div>
+
+                    <!-- Chips de Filtro Rápido -->
+                    <div class="filter-chips-container" style="display: flex; gap: 0.65rem; margin-top: 0.85rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-width: none; -ms-overflow-style: none; align-items: center;">
+                        <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; white-space: nowrap; margin-right: 0.25rem;">Filtrar por:</span>
+                        <button type="button" class="chip-filter active" data-filter="all" style="padding: 0.45rem 1rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-primary); cursor: pointer; white-space: nowrap; font-weight: 600; transition: all 0.2s;">Todos los centros</button>
+                        <button type="button" class="chip-filter" data-filter="agua" style="padding: 0.45rem 1rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">💧 Agua</button>
+                        <button type="button" class="chip-filter" data-filter="alimentos" style="padding: 0.45rem 1rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">🥫 Alimentos</button>
+                        <button type="button" class="chip-filter" data-filter="medicinas" style="padding: 0.45rem 1rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">💊 Medicinas</button>
+                        <button type="button" class="chip-filter" data-filter="operativo" style="padding: 0.45rem 1rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">🟢 Operativos</button>
+                    </div>
+                </div>
+
                 <div class="collection-grid">
                     <form id="collectionCenterForm" class="center-form">
                         <div class="form-group">
@@ -2808,25 +2835,31 @@
 
         centersList.innerHTML = filteredCenters.map(center => {
             const capacityStatus = center.capacity_status || 'operativo';
-            const distanceText = center.distanceKm !== null ? `<p><strong>Distancia:</strong> ${formatDistance(center.distanceKm)}</p>` : '';
-            const suppliesText = center.supplies ? `<p><strong>Insumos:</strong> ${escapeHTML(center.supplies)}</p>` : '';
-            const scheduleText = center.schedule ? `<p><strong>Horario:</strong> ${escapeHTML(center.schedule)}</p>` : '';
-            const contactText = center.contact_info ? `<p><strong>Contacto:</strong> ${escapeHTML(center.contact_info)}</p>` : '';
+            const distanceText = center.distanceKm !== null ? `<div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.25rem;">📍 <strong>A ${formatDistance(center.distanceKm)} de ti</strong></div>` : '';
+            
+            const suppliesText = center.supplies 
+                ? `<div class="center-supplies-detail" style="margin: 0.65rem 0; padding: 0.65rem 0.85rem; background: rgba(59, 130, 246, 0.05); border-left: 3px solid #3b82f6; border-radius: 4px; font-size: 0.85rem; color: var(--text-primary);">
+                     <strong style="color: #3b82f6;">📦 Insumos Requeridos:</strong> <span style="font-weight: 500;">${escapeHTML(center.supplies)}</span>
+                   </div>` 
+                : '<div style="margin: 0.5rem 0; font-size: 0.8rem; color: var(--text-muted); font-style: italic;">No hay requerimientos activos de insumos registrados.</div>';
+                
+            const scheduleText = center.schedule ? `<p style="font-size: 0.8rem; margin: 0.25rem 0; display: flex; align-items: center; gap: 0.35rem; color: var(--text-secondary);">⏰ <strong>Horario:</strong> ${escapeHTML(center.schedule)}</p>` : '';
+            const contactText = center.contact_info ? `<p style="font-size: 0.8rem; margin: 0.25rem 0; display: flex; align-items: center; gap: 0.35rem; color: var(--text-secondary);">📞 <strong>Contacto:</strong> ${escapeHTML(center.contact_info)}</p>` : '';
             const nearestClass = nearest && nearest.id === center.id ? ' nearest' : '';
 
             return `
-                <article class="center-item${nearestClass}">
-                    <div style="display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start;">
-                        <h3>${escapeHTML(center.name)}</h3>
-                        <span class="capacity-badge capacity-${capacityStatus}">${formatCapacityStatus(capacityStatus)}</span>
+                <article class="center-item${nearestClass}" style="border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem; background: var(--surface-default); transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.02);">
+                    <div style="display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start; margin-bottom: 0.5rem;">
+                        <h3 style="font-size: 1rem; font-weight: 700; margin: 0; color: var(--text-primary);">${escapeHTML(center.name)}</h3>
+                        <span class="capacity-badge capacity-${capacityStatus}" style="flex-shrink: 0;">${formatCapacityStatus(capacityStatus)}</span>
                     </div>
-                    <p><strong>Ubicación:</strong> ${escapeHTML(center.location_text)}</p>
+                    <p style="font-size: 0.85rem; margin: 0.35rem 0; color: var(--text-primary);"><strong>Dirección:</strong> ${escapeHTML(center.location_text)}</p>
                     ${distanceText}
                     ${suppliesText}
                     ${scheduleText}
                     ${contactText}
-                    <div class="center-actions">
-                        <a class="text-link" href="${createDirectionsUrl(center)}" target="_blank" rel="noopener noreferrer">Abrir ruta</a>
+                    <div class="center-actions" style="margin-top: 0.75rem; display: flex; justify-content: flex-end; border-top: 1px solid var(--border-color); padding-top: 0.5rem;">
+                        <a class="text-link" href="${createDirectionsUrl(center)}" target="_blank" rel="noopener noreferrer" style="font-size: 0.8rem; font-weight: 600; color: #3b82f6; display: flex; align-items: center; gap: 0.25rem;">Abrir ruta en mapa ↗</a>
                     </div>
                 </article>
             `;

@@ -2345,85 +2345,99 @@ async function handleAcopioInput({ text, audioBuffer, audioMimeType, userLat, us
     }
   }
 
-  // 3. Ejecutar inserción o actualización de manera segura
-  if (matchedCenterId) {
-    const updateFields = [];
-    const updateValues = [];
-    let paramCounter = 1;
+  // 3. Ejecutar inserción o actualización de manera segura utilizando transacción y configurando el rol
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SET LOCAL app.role = 'authenticated';");
 
-    if (extracted.supplies) {
-      updateFields.push(`supplies = $${paramCounter++}`);
-      updateValues.push(extracted.supplies);
-    }
-    if (extracted.schedule) {
-      updateFields.push(`schedule = $${paramCounter++}`);
-      updateValues.push(extracted.schedule);
-    }
-    if (extracted.contact_info) {
-      updateFields.push(`contact_info = $${paramCounter++}`);
-      updateValues.push(extracted.contact_info);
-    }
-    if (extracted.capacity_status) {
-      updateFields.push(`capacity_status = $${paramCounter++}`);
-      updateValues.push(extracted.capacity_status);
-    }
+    if (matchedCenterId) {
+      const updateFields = [];
+      const updateValues = [];
+      let paramCounter = 1;
 
-    if (updateFields.length > 0) {
-      updateValues.push(matchedCenterId);
-      const updateQuery = `
-        UPDATE public.collection_centers
-        SET ${updateFields.join(', ')}
-        WHERE id = $${paramCounter}
+      if (extracted.supplies) {
+        updateFields.push(`supplies = $${paramCounter++}`);
+        updateValues.push(extracted.supplies);
+      }
+      if (extracted.schedule) {
+        updateFields.push(`schedule = $${paramCounter++}`);
+        updateValues.push(extracted.schedule);
+      }
+      if (extracted.contact_info) {
+        updateFields.push(`contact_info = $${paramCounter++}`);
+        updateValues.push(extracted.contact_info);
+      }
+      if (extracted.capacity_status) {
+        updateFields.push(`capacity_status = $${paramCounter++}`);
+        updateValues.push(extracted.capacity_status);
+      }
+
+      if (updateFields.length > 0) {
+        updateValues.push(matchedCenterId);
+        const updateQuery = `
+          UPDATE public.collection_centers
+          SET ${updateFields.join(', ')}
+          WHERE id = $${paramCounter}
+          RETURNING *;
+        `;
+        const updateRes = await client.query(updateQuery, updateValues);
+        await client.query('COMMIT');
+        return {
+          success: true,
+          action: 'UPDATE',
+          matched: true,
+          center: updateRes.rows[0],
+          extracted
+        };
+      } else {
+        const selectRes = await client.query(`SELECT * FROM public.collection_centers WHERE id = $1;`, [matchedCenterId]);
+        await client.query('COMMIT');
+        return {
+          success: true,
+          action: 'UPDATE',
+          matched: true,
+          center: selectRes.rows[0],
+          extracted
+        };
+      }
+    } else {
+      // Es REGISTER (o UPDATE no emparejado): se crea un nuevo centro de acopio
+      const lat = userLat || 10.5000; // Por defecto Caracas
+      const lng = userLng || -66.9030;
+      const locationText = extracted.location_description || 'Ubicación no especificada';
+
+      const insertQuery = `
+        INSERT INTO public.collection_centers (
+          name, location_text, lat, lng, supplies, schedule, contact_info, capacity_status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *;
       `;
-      const updateRes = await pool.query(updateQuery, updateValues);
+      const insertRes = await client.query(insertQuery, [
+        extracted.center_name || 'Centro de Acopio Anónimo',
+        locationText,
+        lat,
+        lng,
+        extracted.supplies || null,
+        extracted.schedule || null,
+        extracted.contact_info || null,
+        extracted.capacity_status || 'operativo'
+      ]);
+
+      await client.query('COMMIT');
       return {
         success: true,
-        action: 'UPDATE',
-        matched: true,
-        center: updateRes.rows[0],
-        extracted
-      };
-    } else {
-      const selectRes = await pool.query(`SELECT * FROM public.collection_centers WHERE id = $1;`, [matchedCenterId]);
-      return {
-        success: true,
-        action: 'UPDATE',
-        matched: true,
-        center: selectRes.rows[0],
+        action: 'REGISTER',
+        matched: false,
+        center: insertRes.rows[0],
         extracted
       };
     }
-  } else {
-    // Es REGISTER (o UPDATE no emparejado): se crea un nuevo centro de acopio
-    const lat = userLat || 10.5000; // Por defecto Caracas
-    const lng = userLng || -66.9030;
-    const locationText = extracted.location_description || 'Ubicación no especificada';
-
-    const insertQuery = `
-      INSERT INTO public.collection_centers (
-        name, location_text, lat, lng, supplies, schedule, contact_info, capacity_status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *;
-    `;
-    const insertRes = await pool.query(insertQuery, [
-      extracted.center_name || 'Centro de Acopio Anónimo',
-      locationText,
-      lat,
-      lng,
-      extracted.supplies || null,
-      extracted.schedule || null,
-      extracted.contact_info || null,
-      extracted.capacity_status || 'operativo'
-    ]);
-
-    return {
-      success: true,
-      action: 'REGISTER',
-      matched: false,
-      center: insertRes.rows[0],
-      extracted
-    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
