@@ -161,7 +161,20 @@ app.get('/', async (req, res) => {
   }
 
   res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(__dirname, 'frontend', 'Reporte Desaparecidos Venezuela.dc.html'));
+  res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
+});
+
+// Rutas amigables para las páginas modularizadas
+app.get('/acopio', (req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend', 'acopio.html'));
+});
+
+app.get('/desaparecidos', (req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend', 'desaparecidos.html'));
+});
+
+app.get('/voluntarios', (req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend', 'voluntariado.html'));
 });
 
 // Endpoint de Health Check requerido por Google Cloud Run
@@ -1461,7 +1474,7 @@ app.get('/sitemap.xml', async (req, res) => {
 // Ruta para cargar una persona específica con SEO dinámico para WhatsApp/Buscadores
 app.get('/personas/:id', async (req, res) => {
   const { id } = req.params;
-  const htmlPath = path.join(__dirname, 'frontend', 'Reporte Desaparecidos Venezuela.dc.html');
+  const htmlPath = path.join(__dirname, 'frontend', 'desaparecidos.html');
   
   try {
     // 1. Validar UUID para proteger contra inyecciones

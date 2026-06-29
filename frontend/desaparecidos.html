@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SismoVenezuela | Localización de Personas Desaparecidas</title>
+    <meta name="description" content="Portal de búsqueda, reporte e importación inteligente de personas desaparecidas tras el sismo en Venezuela.">
+    <link rel="icon" type="image/png" href="frontend/media/casserole_solidaria.png">
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div class="brand">
+            <h1>Sismo<span>Venezuela</span></h1>
+            <p>Reportes, suministros y centros de apoyo comunitario</p>
+        </div>
+        <nav class="nav-menu">
+            <a href="/">Inicio / Alertas</a>
+            <a href="acopio.html">Centros de Acopio</a>
+            <a href="desaparecidos.html" class="active">Desaparecidos</a>
+            <a href="voluntariado.html">Voluntariado</a>
+        </nav>
+        <div class="status-badge">
+            <div class="status-dot"></div>
+            <span>Operativo</span>
+        </div>
+    </header>
+
+    <div class="layout">
+        <!-- ACCIONES DE IMPORTACIÓN Y SINCRO (COLUMNA IZQUIERDA) -->
+        <aside>
+            <div class="card" id="externalDataCard">
+                <h3 class="card-title" style="font-weight: 700;">👤 Búsqueda e Importación de Desaparecidos</h3>
+                <p class="helper-text" style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45;">
+                    Utilizamos inteligencia artificial para escanear y deduplicar listas públicas. Si cuentas con un export autorizado en formato JSON, súbelo o pégalo abajo para fusionarlo.
+                </p>
+                
+                <!-- Sincronización Automática Status -->
+                <div class="import-summary" id="missingSyncStatus" style="display: block; margin-top: 0; margin-bottom: 1.25rem; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--surface-muted); font-size: 0.8rem;">
+                    Consultando estado de sincronización...
+                </div>
+
+                <div class="external-actions" style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem;">
+                    <div style="display: flex; gap: 0.5rem;">
+                        <a class="btn btn-secondary" href="https://desaparecidosterremotovenezuela.com/" target="_blank" rel="noopener noreferrer" style="flex: 1; font-size: 0.8rem;">
+                            Abrir sitio original ↗
+                        </a>
+                        <button type="button" class="btn btn-secondary" id="btnToggleExternalFrame" style="flex: 1; font-size: 0.8rem;">
+                            Ver sitio aquí
+                        </button>
+                    </div>
+                    <button type="button" class="btn" id="btnScrapeMissing" style="background: linear-gradient(135deg, #7c3aed, #4f46e5); color: white; border: none; width: 100%; font-size: 0.85rem;">
+                        🤖 Sincronizar Fuente Externa con IA
+                    </button>
+                </div>
+
+                <!-- Formulario de Importación JSON -->
+                <form id="missingImportForm" style="border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                    <div class="form-group">
+                        <label for="missingImportFile" style="font-weight: 700;">Importar export JSON autorizado</label>
+                        <input class="file-input" type="file" id="missingImportFile" accept="application/json,.json">
+                    </div>
+                    <div class="form-group">
+                        <label for="missingImportJson" style="font-weight: 700;">O pegar JSON directamente</label>
+                        <textarea id="missingImportJson" placeholder='{"items":[{"nombre":"...", "ubicacion":"...", "descripcion":"..."}]}' style="min-height: 100px; font-family: monospace; font-size: 0.75rem;"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-secondary" id="btnImportMissing" style="width: 100%; font-size: 0.85rem;">Importar y quitar duplicados</button>
+                </form>
+
+                <div class="import-summary" id="missingImportSummary" style="display: none; margin-top: 1rem;"></div>
+            </div>
+
+            <!-- TELÉFONOS DE EMERGENCIA SIDEBAR -->
+            <div class="card" style="border-color: rgba(59, 130, 246, 0.2);">
+                <h3 class="card-title" style="font-size: 1rem; font-weight: 700;">📞 Teléfonos de Emergencia</h3>
+                <div class="form-group" style="margin-bottom: 0.75rem;">
+                    <input type="text" id="emergencyPhoneSearch" placeholder="Filtra teléfonos (ej: bomberos, chacao)..." style="min-height: 38px; font-size: 0.8rem;" />
+                </div>
+                <div class="filter-chips-container" style="display: flex; gap: 0.35rem; margin-bottom: 0.75rem; overflow-x: auto; scrollbar-width: none;">
+                    <button type="button" class="filter-chip phone-filter-btn active" data-type="all" style="min-height: 28px; padding: 0.25rem 0.5rem; font-size: 0.7rem;">Todos</button>
+                    <button type="button" class="filter-chip phone-filter-btn" data-type="salud" style="min-height: 28px; padding: 0.25rem 0.5rem; font-size: 0.7rem;">🏥 Salud</button>
+                    <button type="button" class="filter-chip phone-filter-btn" data-type="rescate" style="min-height: 28px; padding: 0.25rem 0.5rem; font-size: 0.7rem;">🛡️ Rescate</button>
+                </div>
+
+                <div id="emergencyPhonesList" style="display: flex; flex-direction: column; gap: 0.4rem; max-height: 200px; overflow-y: auto;">
+                    <div class="phone-item" data-type="bomberos" data-search="bomberos chacao" style="background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.4rem 0.5rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">
+                        <span style="font-weight: 600;">🚒 Bomberos Chacao</span>
+                        <a href="tel:02122653261" style="color: var(--color-critical); font-weight: 700; text-decoration: none;">265.32.61</a>
+                    </div>
+                    <div class="phone-item" data-type="bomberos" data-search="bomberos metropolitanos" style="background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.4rem 0.5rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">
+                        <span style="font-weight: 600;">🚒 Bomberos Metrop.</span>
+                        <a href="tel:02125454545" style="color: var(--color-critical); font-weight: 700; text-decoration: none;">545.45.45</a>
+                    </div>
+                    <div class="phone-item" data-type="pc" data-search="proteccion civil nacional 0800" style="background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.4rem 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem;">
+                        <span style="font-weight: 600;">🛡️ Prot. Civil Nacional</span>
+                        <a href="tel:08005588427" style="color: var(--color-info); font-weight: 700; text-decoration: none;">0800-5588427</a>
+                    </div>
+                    <div class="phone-item" data-type="pc" data-search="defensa civil alcaldia mayor" style="background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.4rem 0.5rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">
+                        <span style="font-weight: 600;">🛡️ Defensa Civil AM</span>
+                        <a href="tel:02126626759" style="color: var(--color-info); font-weight: 700; text-decoration: none;">662.67.59</a>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- VISUALIZACIÓN DEL SITIO EMBEBIDO (COLUMNA DERECHA) -->
+        <main>
+            <div class="card" style="margin-bottom: 0;">
+                <div class="card-title">
+                    <span>🖼️ Portal Integrado de Desaparecidos</span>
+                    <span style="background: rgba(124, 58, 237, 0.15); font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 99px; color: #7c3aed; font-weight: 600;">Iframe Activo</span>
+                </div>
+                
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; line-height: 1.45;">
+                    A continuación se incrusta el sitio de referencia `desaparecidosterremotovenezuela.com`. Si el sitio tarda en cargar o se encuentra inestable, puedes utilizar la sincronización remota por IA a la izquierda.
+                </p>
+
+                <div class="external-frame-wrap" id="externalFrameWrap" style="display: block; margin-top: 0; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; background: white;">
+                    <iframe
+                        id="externalFrame"
+                        class="external-frame"
+                        title="Desaparecidos Terremoto Venezuela"
+                        src="https://desaparecidosterremotovenezuela.com/"
+                        loading="lazy"
+                        referrerpolicy="no-referrer"
+                        sandbox="allow-forms allow-popups allow-same-origin allow-scripts"
+                        style="width: 100%; min-height: 600px; border: 0;"
+                    ></iframe>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div class="toast" id="toast" role="alert" aria-live="assertive">
+        <div id="toastMessage">Mensaje informativo</div>
+    </div>
+
+    <!-- MOBILE BOTTOM NAVIGATION (Tab Bar) -->
+    <nav class="mobile-quick-actions" aria-label="Navegación móvil">
+        <a href="/">🚨 Alertas</a>
+        <a href="acopio.html">📦 Acopio</a>
+        <a href="desaparecidos.html" class="active">👤 Buscar</a>
+        <a href="voluntariado.html">🤝 Ayudar</a>
+    </nav>
+
+    <footer class="site-footer">
+        <p>© 2026 SismoVenezuela • Todos los derechos reservados. Desarrollado por voluntarios de la comunidad digital de la Red Quipu.</p>
+    </footer>
+</div>
+
+<!-- Scripts -->
+<script src="support.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>

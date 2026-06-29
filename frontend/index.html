@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SismoVenezuela | Red de Apoyo y Reporte de Emergencias</title>
+    <meta name="description" content="Plataforma humanitaria centralizada para el reporte de incidentes, localización de personas desaparecidas y monitoreo de la red de conectividad tras el sismo en Venezuela.">
+    <link rel="icon" type="image/png" href="frontend/media/casserole_solidaria.png">
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="css/styles.css">
+    
+    <!-- External Libs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div class="brand">
+            <h1>Sismo<span>Venezuela</span></h1>
+            <p>Reportes, suministros y centros de apoyo comunitario</p>
+        </div>
+        <nav class="nav-menu">
+            <a href="/" class="active">Inicio / Alertas</a>
+            <a href="acopio.html">Centros de Acopio</a>
+            <a href="desaparecidos.html">Desaparecidos</a>
+            <a href="voluntariado.html">Voluntariado</a>
+        </nav>
+        <div class="status-badge">
+            <div class="status-dot"></div>
+            <span>Operativo</span>
+        </div>
+    </header>
+
+    <section class="hero" aria-labelledby="heroTitle">
+        <div class="hero-copy">
+            <div class="eyebrow">Respuesta ciudadana</div>
+            <h2 id="heroTitle">Encuentra ayuda cercana y comparte reportes confiables.</h2>
+            <p>La plataforma conecta incidentes, solicitudes de suministros y centros de acopio para facilitar decisiones rápidas en comunidades afectadas.</p>
+            <div class="hero-actions">
+                <a class="btn btn-danger btn-inline" href="#reportForm">Enviar reporte</a>
+                <a class="btn btn-secondary btn-inline" href="acopio.html">Ver centros de acopio</a>
+            </div>
+        </div>
+        <div class="hero-status" aria-label="Resumen de la red">
+            <div class="quick-stat">
+                <strong id="heroReportsCount">--</strong>
+                <span>incidentes activos</span>
+            </div>
+            <div class="quick-stat">
+                <strong id="heroCentersCount">--</strong>
+                <span>centros registrados</span>
+            </div>
+            <div class="quick-stat">
+                <strong id="liveAvgLatency">--</strong>
+                <span id="liveQualityLabel">Cargando telemetría...</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- POPUP DE SELECCIÓN DE ESTADO (Para telemetría pasiva) -->
+    <div id="userStateSelectorContainer" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(23, 32, 51, 0.85); z-index: 99999; align-items: center; justify-content: center; padding: 1rem;">
+        <div style="background: var(--card-bg); max-width: 480px; width: 100%; padding: 2rem; border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3); text-align: center;">
+            <h3 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.75rem; color: var(--text-primary);">📍 Selecciona tu ubicación actual</h3>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.45;">Para ayudarnos a construir el mapa de conectividad en tiempo real tras el sismo, selecciona el estado donde te encuentras. Tu navegador medirá la latencia de forma anónima.</p>
+            <div class="form-group" style="text-align: left;">
+                <label for="userStateSelect">Estado actual</label>
+                <select id="userStateSelect" style="min-height: 48px;">
+                    <option value="" disabled selected>Seleccione el estado...</option>
+                    <option value="Distrito Capital">Distrito Capital</option>
+                    <option value="Amazonas">Amazonas</option>
+                    <option value="Anzoátegui">Anzoátegui</option>
+                    <option value="Apure">Apure</option>
+                    <option value="Aragua">Aragua</option>
+                    <option value="Barinas">Barinas</option>
+                    <option value="Bolívar">Bolívar</option>
+                    <option value="Carabobo">Carabobo</option>
+                    <option value="Cojedes">Cojedes</option>
+                    <option value="Delta Amacuro">Delta Amacuro</option>
+                    <option value="Falcón">Falcón</option>
+                    <option value="Guárico">Guárico</option>
+                    <option value="Lara">Lara</option>
+                    <option value="Mérida">Mérida</option>
+                    <option value="Miranda">Miranda</option>
+                    <option value="Monagas">Monagas</option>
+                    <option value="Nueva Esparta">Nueva Esparta</option>
+                    <option value="Portuguesa">Portuguesa</option>
+                    <option value="Sucre">Sucre</option>
+                    <option value="Táchira">Táchira</option>
+                    <option value="Trujillo">Trujillo</option>
+                    <option value="La Guaira">La Guaira</option>
+                    <option value="Yaracuy">Yaracuy</option>
+                    <option value="Zulia">Zulia</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="layout">
+        <!-- FORMULARIO DE REPORTE (COLUMNA IZQUIERDA) -->
+        <aside>
+            <div class="card" id="reportFormCard">
+                <h2 class="card-title">Enviar reporte de ayuda</h2>
+                <form id="reportForm">
+                    <div class="form-group">
+                        <label for="type">Tipo de Incidente</label>
+                        <select id="type" required>
+                            <option value="" disabled selected>Seleccione una opción...</option>
+                            <option value="emergencia_medica">Emergencia Médica</option>
+                            <option value="rescate_estructural">Rescate Estructural</option>
+                            <option value="desaparecido">Persona Desaparecida</option>
+                            <option value="suministros">Solicitud de Suministros</option>
+                            <option value="sin_comunicacion">Falla de Comunicaciones / Internet</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="state">Estado (Ubicación Geográfica)</label>
+                        <select id="state" required>
+                            <option value="" disabled selected>Seleccione el estado...</option>
+                            <option value="Distrito Capital">Distrito Capital</option>
+                            <option value="Amazonas">Amazonas</option>
+                            <option value="Anzoátegui">Anzoátegui</option>
+                            <option value="Apure">Apure</option>
+                            <option value="Aragua">Aragua</option>
+                            <option value="Barinas">Barinas</option>
+                            <option value="Bolívar">Bolívar</option>
+                            <option value="Carabobo">Carabobo</option>
+                            <option value="Cojedes">Cojedes</option>
+                            <option value="Delta Amacuro">Delta Amacuro</option>
+                            <option value="Falcón">Falcón</option>
+                            <option value="Guárico">Guárico</option>
+                            <option value="Lara">Lara</option>
+                            <option value="Mérida">Mérida</option>
+                            <option value="Miranda">Miranda</option>
+                            <option value="Monagas">Monagas</option>
+                            <option value="Nueva Esparta">Nueva Esparta</option>
+                            <option value="Portuguesa">Portuguesa</option>
+                            <option value="Sucre">Sucre</option>
+                            <option value="Táchira">Táchira</option>
+                            <option value="Trujillo">Trujillo</option>
+                            <option value="La Guaira">La Guaira</option>
+                            <option value="Yaracuy">Yaracuy</option>
+                            <option value="Zulia">Zulia</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="title">Título Corto del Reporte</label>
+                        <input type="text" id="title" placeholder="Ej: Derrumbe parcial / Colapso de vía">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="urgency">Nivel de Urgencia</label>
+                        <select id="urgency" required>
+                            <option value="critico">Crítico (Vida o muerte)</option>
+                            <option value="alto">Alto (Grave)</option>
+                            <option value="moderado" selected>Moderado (Estable)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="location_text">Referencia de ubicación</label>
+                        <input type="text" id="location_text" required placeholder="Ej: Esquina de Gradillas a San Jacinto, Edif. La Bolsa">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Coordenadas GPS (Opcional)</label>
+                        <div class="form-row">
+                            <input type="number" step="any" id="lat" placeholder="Latitud">
+                            <input type="number" step="any" id="lng" placeholder="Longitud">
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-gps" id="btnGPS" style="margin-top: 0.5rem;">
+                            📍 Capturar GPS
+                        </button>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="contact_info">Contacto (Opcional - Telegram/Celular)</label>
+                        <input type="text" id="contact_info" placeholder="Ej: @username o +584120000000">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="description">Descripción del Incidente</label>
+                        <textarea id="description" required placeholder="Describe lo que sucede, número de personas afectadas o estado de la estructura..."></textarea>
+                    </div>
+
+                    <!-- SUBFORMULARIO DINÁMICO DE DESAPARECIDO -->
+                    <div class="missing-subform" id="missingSubform">
+                        <h3 style="font-size: 0.95rem; color: var(--color-critical); margin-bottom: 0.75rem; font-weight: 600;">Detalles del Desaparecido</h3>
+                        <div class="form-group">
+                            <label for="mp_name">Nombre Completo</label>
+                            <input type="text" id="mp_name" placeholder="Nombre de la persona buscada">
+                        </div>
+                        <div class="form-group">
+                            <label for="mp_desc">Descripción Física</label>
+                            <input type="text" id="mp_desc" placeholder="Ej: Hombre, 30 años, camisa verde y gorra">
+                        </div>
+                        <div class="form-group">
+                            <label for="mp_seen">Último Lugar Visto</label>
+                            <input type="text" id="mp_seen" placeholder="Ej: Saliendo del Centro Comercial Chacaíto">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-danger" id="btnSubmit" style="margin-top: 1rem;">
+                        ⚠️ Enviar reporte de emergencia
+                    </button>
+                </form>
+            </div>
+        </aside>
+
+        <!-- PANEL DE ALERTAS E INCIDENTES ACTIVO (COLUMNA DERECHA) -->
+        <main>
+            <!-- MONITOREO DE CONECTIVIDAD NACIONAL -->
+            <div class="card" id="connectivityCard" style="border-left: 4px solid var(--color-info);">
+                <div class="card-title">
+                    <span>🌐 Mapa de Conectividad Nacional (Telemetría en Vivo)</span>
+                    <span id="telemetryStatusBadge" style="background: rgba(16, 185, 129, 0.15); font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 99px; color: var(--color-success); font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem;">
+                        <span class="status-dot" style="width: 6px; height: 6px; background-color: var(--color-success); border-radius: 50%; animation: pulse 2s infinite;"></span> Telemetría Activa
+                    </span>
+                </div>
+                
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.45;">
+                    Estado real de la red medido de forma anónima desde los navegadores de los voluntarios en cada estado. Haz clic en un estado del mapa o de la lista para filtrar los incidentes de esa región.
+                </p>
+
+                <div style="display: grid; grid-template-columns: 1fr; gap: 1.5rem; align-items: center;">
+                    <!-- Mapa SVG -->
+                    <div id="connectivityMapContainer" style="background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; width: 100%; display: flex; align-items: center; justify-content: center;">
+                        <div style="color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 2rem;">Cargando mapa de red nacional...</div>
+                    </div>
+                    
+                    <!-- Grid de Estados -->
+                    <div id="connectivityGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.5rem; max-height: 180px; overflow-y: auto; padding-right: 0.25rem;">
+                        <!-- Inyectado dinámicamente -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- MONITOREO SÍSMICO USGS -->
+            <div class="card" id="seismicCard" style="border-left: 4px solid var(--color-critical);">
+                <div class="card-title">
+                    <span>📡 Monitoreo Sísmico de Venezuela (USGS en Vivo)</span>
+                    <span id="seismicChartSummary" class="counter-pill">Cargando...</span>
+                </div>
+                
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.45;">
+                    Historial de eventos sísmicos en territorio venezolano y zonas limítrofes, conectado directamente al Servicio Geológico de EE. UU. (USGS).
+                </p>
+
+                <div style="display: grid; grid-template-columns: 1fr; gap: 1.25rem;">
+                    <!-- Gráfica de sismos -->
+                    <div style="height: 180px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.75rem 0.5rem 0.25rem 0.5rem; position: relative;">
+                        <canvas id="seismicChartCanvas" style="width: 100%; height: 100%;"></canvas>
+                    </div>
+
+                    <!-- Lista de sismos -->
+                    <div id="seismicList" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 220px; overflow-y: auto; padding-right: 0.25rem;">
+                        <!-- Inyectado dinámicamente -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- TABLERO DE ALERTAS ACTIVO -->
+            <div class="card" id="incidentsCard">
+                <div class="card-title">
+                    <span>🚨 Tablero de Alertas y Emergencias Activas</span>
+                    <span id="reportsCount" class="counter-pill">Cargando alertas...</span>
+                </div>
+
+                <!-- Buscador de alertas -->
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <div style="position: relative; display: flex; align-items: center; width: 100%;">
+                        <input type="text" id="incidentsSearchInput" placeholder="Buscar incidentes por palabra clave, dirección, descripción o contacto..." style="width: 100%; min-height: 44px; padding: 0.5rem 1rem 0.5rem 2.5rem; font-size: 0.9rem;" />
+                        <span style="position: absolute; left: 12px; color: var(--text-secondary); font-size: 1.1rem; pointer-events: none;">🔍</span>
+                    </div>
+                </div>
+
+                <!-- Filtros rápidos de incidentes -->
+                <div class="dashboard-actions" style="margin-bottom: 1.25rem;">
+                    <button class="filter-chip active" data-filter="all">Todos</button>
+                    <button class="filter-chip" data-filter="emergencia_medica">🩺 Salud</button>
+                    <button class="filter-chip" data-filter="rescate_estructural">🚧 Rescate</button>
+                    <button class="filter-chip" data-filter="desaparecido">👤 Desaparecidos</button>
+                    <button class="filter-chip" data-filter="suministros">📦 Suministros</button>
+                    <button class="filter-chip" data-filter="sin_comunicacion">📡 Comms</button>
+                </div>
+
+                <!-- Filtro de Inteligencia Artificial -->
+                <div class="card" style="margin-bottom: 1.5rem; background: rgba(59, 130, 246, 0.03); border: 1px dashed rgba(59, 130, 246, 0.25); border-radius: 10px; padding: 1.25rem;">
+                    <h3 class="card-title" style="color: var(--color-info); margin-bottom: 0.5rem; border-bottom: 0; padding-bottom: 0;">
+                        Rastreador de Alertas Públicas (AI Sync)
+                    </h3>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; line-height: 1.4;">
+                        Busca alertas públicas en redes y noticias para sumar reportes recientes al tablero, conservando la fuente original cuando esté disponible.
+                    </p>
+                    <button type="button" class="btn" id="btnSyncIA" style="background: rgba(59, 130, 246, 0.15); color: var(--color-info); border: 1px solid rgba(59, 130, 246, 0.3);">
+                        🤖 Rastrear alertas públicas
+                    </button>
+                </div>
+
+                <!-- Listado Dinámico -->
+                <div class="reports-list" id="reportsList">
+                    <!-- Inyectado dinámicamente -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div class="toast" id="toast" role="alert" aria-live="assertive">
+        <div id="toastMessage">Mensaje informativo</div>
+    </div>
+
+    <!-- MOBILE BOTTOM NAVIGATION (Tab Bar) -->
+    <nav class="mobile-quick-actions" aria-label="Navegación móvil">
+        <a href="/" class="active">🚨 Alertas</a>
+        <a href="acopio.html">📦 Acopio</a>
+        <a href="desaparecidos.html">👤 Buscar</a>
+        <a href="voluntariado.html">🤝 Ayudar</a>
+    </nav>
+
+    <footer class="site-footer">
+        <p>© 2026 SismoVenezuela • Todos los derechos reservados. Desarrollado por voluntarios de la comunidad digital de la Red Quipu.</p>
+    </footer>
+</div>
+
+<!-- Scripts -->
+<script src="support.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>

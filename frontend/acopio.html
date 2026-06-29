@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SismoVenezuela | Centros de Acopio y Ayuda Humanitaria</title>
+    <meta name="description" content="Mapeo y consulta en tiempo real de centros de acopio y donaciones disponibles tras el sismo en Venezuela.">
+    <link rel="icon" type="image/png" href="frontend/media/casserole_solidaria.png">
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div class="brand">
+            <h1>Sismo<span>Venezuela</span></h1>
+            <p>Reportes, suministros y centros de apoyo comunitario</p>
+        </div>
+        <nav class="nav-menu">
+            <a href="/">Inicio / Alertas</a>
+            <a href="acopio.html" class="active">Centros de Acopio</a>
+            <a href="desaparecidos.html">Desaparecidos</a>
+            <a href="voluntariado.html">Voluntariado</a>
+        </nav>
+        <div class="status-badge">
+            <div class="status-dot"></div>
+            <span>Operativo</span>
+        </div>
+    </header>
+
+    <div class="layout" style="grid-template-columns: 1fr;">
+        <!-- CONTENEDOR DE CENTROS DE ACOPIO COMPLETO -->
+        <div class="card collection-card" id="collectionCentersCard" style="margin-bottom: 0;">
+            <div class="card-title" style="margin-bottom: 1.5rem;">
+                <span style="font-weight: 700; font-size: 1.15rem;">📍 Centros de Acopio y Ayuda Georreferenciados</span>
+                <span class="counter-pill" id="centersCount">Cargando centros...</span>
+            </div>
+
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.45;">
+                Registra un nuevo centro de acopio o consulta el mapa y el listado interactivo para conocer qué insumos se necesitan con urgencia en cada localidad.
+            </p>
+
+            <div class="collection-grid">
+                <!-- FORMULARIO DE REGISTRO (COLUMNA IZQUIERDA) -->
+                <form id="collectionCenterForm" class="center-form">
+                    <div class="form-group">
+                        <label for="center_name">Nombre del centro de acopio</label>
+                        <input type="text" id="center_name" required placeholder="Ej: Parroquia La Pastora - Iglesia">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="center_location">Dirección o Referencia de Ubicación</label>
+                        <input type="text" id="center_location" required placeholder="Ej: Frente a la Plaza Bolívar de La Pastora">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="center_lat">Latitud</label>
+                            <input type="number" step="any" id="center_lat" required placeholder="Latitud">
+                        </div>
+                        <div class="form-group">
+                            <label for="center_lng">Longitud</label>
+                            <input type="number" step="any" id="center_lng" required placeholder="Longitud">
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.5rem; margin-bottom: 1rem;">
+                        <button type="button" class="btn btn-secondary btn-gps" id="btnCenterGPS">
+                            📍 Usar mi ubicación actual para el centro
+                        </button>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="center_status">Estado de Capacidad / Saturación</label>
+                        <select id="center_status" required>
+                            <option value="operativo" selected>🟢 Operativo (Recibiendo donaciones)</option>
+                            <option value="alta_demanda">🟡 Alta demanda (Se necesitan más insumos)</option>
+                            <option value="sin_capacidad">🔴 Sin capacidad / Sólido (Lleno temporalmente)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="center_schedule">Horario de Atención (Opcional)</label>
+                        <input type="text" id="center_schedule" placeholder="Ej: Lunes a Domingo, 8:00 AM - 4:00 PM">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="center_contact">Contacto o Teléfono del Encargado (Opcional)</label>
+                        <input type="text" id="center_contact" placeholder="Ej: +584241234567">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="center_supplies">Insumos Requeridos con Urgencia (Separados por comas)</label>
+                        <textarea id="center_supplies" placeholder="Ej: Agua potable, alimentos no perecederos, pañales, suero oral..."></textarea>
+                    </div>
+
+                    <button type="submit" class="btn" id="btnCenterSubmit">Guardar centro de acopio</button>
+                </form>
+
+                <!-- MAPA LEAFLET E INSTRUMENTOS (COLUMNA DERECHA) -->
+                <div class="map-shell">
+                    <div id="centersMap" class="map-panel">
+                        <div class="map-fallback">Cargando mapa de centros de acopio...</div>
+                    </div>
+                    
+                    <div id="nearestCenter" class="nearest-panel" style="margin-top: 1rem;">
+                        Activa tu ubicación para calcular el centro de acopio más cercano.
+                    </div>
+                    
+                    <button type="button" class="btn btn-secondary" id="btnFindNearest" style="margin-top: 0.75rem;">
+                        Encontrar centro más cercano a mí
+                    </button>
+                </div>
+            </div>
+
+            <!-- BUSCADOR DE ACOPIO PREMIUM (Ancho completo debajo de la cuadrícula) -->
+            <div class="search-panel-container" style="margin: 2rem 0 1.25rem 0; padding: 1.25rem; background: rgba(59, 130, 246, 0.04); border: 1px solid rgba(59, 130, 246, 0.15); border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);">
+                <label for="centerSearchInput" style="font-weight: 700; font-size: 0.95rem; margin-bottom: 0.65rem; display: flex; align-items: center; justify-content: space-between; color: var(--text-primary);">
+                    <span style="display: flex; align-items: center; gap: 0.45rem;">🔍 Buscador Inteligente de Acopio (Filtros Rápidos)</span>
+                    <span id="searchResultCount" style="font-size: 0.75rem; font-weight: 600; color: #3b82f6;">Cargando...</span>
+                </label>
+                
+                <div class="search-input-wrapper" style="position: relative; display: flex; align-items: center; width: 100%;">
+                    <input type="text" id="centerSearchInput" placeholder="Busca un centro por nombre (ej: Candelaria), sector (ej: Chacao) o insumo que requiera (ej: agua, medicinas)..." style="width: 100%; min-height: 46px; padding: 0.5rem 2.75rem 0.5rem 1.25rem; font-size: 0.95rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-primary); transition: all 0.2s;" />
+                    
+                    <button id="btnClearSearch" type="button" style="position: absolute; right: 12px; background: none; border: none; color: var(--text-secondary); font-size: 1.2rem; cursor: pointer; display: none; padding: 0.25rem; line-height: 1;">
+                        ✕
+                    </button>
+                </div>
+
+                <!-- Chips de Filtro Rápido -->
+                <div class="filter-chips-container" style="display: flex; gap: 0.65rem; margin-top: 0.85rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-width: none; -ms-overflow-style: none; align-items: center;">
+                    <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; white-space: nowrap; margin-right: 0.25rem;">Filtrar por:</span>
+                    <button type="button" class="chip-filter active" data-filter="all" style="padding: 0.45rem 1rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-primary); cursor: pointer; white-space: nowrap; font-weight: 600; transition: all 0.2s;">Todos los centros</button>
+                    <button type="button" class="chip-filter" data-filter="agua" style="padding: 0.45rem 1rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">💧 Agua</button>
+                    <button type="button" class="chip-filter" data-filter="alimentos" style="padding: 0.45rem 1rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">🥫 Alimentos</button>
+                    <button type="button" class="chip-filter" data-filter="medicinas" style="padding: 0.45rem 1rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">💊 Medicinas</button>
+                    <button type="button" class="chip-filter" data-filter="operativo" style="padding: 0.45rem 1rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">🟢 Operativos</button>
+                </div>
+            </div>
+
+            <!-- LISTA DE RESULTADOS DE CENTROS (Ancho completo debajo del buscador) -->
+            <div class="centers-list" id="centersList" style="margin: 1.25rem 0 1.5rem 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; max-height: 480px; overflow-y: auto; padding-right: 0.25rem;"></div>
+
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 1.5rem 0;">
+
+            <!-- ASISTENTE DE CHAT INTELIGENTE POR VOZ / ESCRITO (Gemini) -->
+            <div class="ai-chat-section">
+                <div style="font-weight: 700; color: var(--text-primary); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
+                    🤖 Asistente de Acopio IA (Voz o Escrito)
+                    <span style="background: rgba(59, 130, 246, 0.15); font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 99px; color: #3b82f6; font-weight: 600;">Gemini Active</span>
+                </div>
+                
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; line-height: 1.45;">
+                    ¿No tienes tiempo de llenar todo el formulario? Simplemente **escribe un mensaje** o **envía una nota de voz** describiendo el centro de acopio y sus necesidades. Nuestro motor de IA (Gemini) la transcribirá, extraerá los datos automáticamente y los registrará en el mapa.
+                </p>
+
+                <div class="chat-container" style="border: 1px solid var(--border-color); border-radius: 12px; background: var(--surface-muted); overflow: hidden; display: flex; flex-direction: column; max-height: 380px;">
+                    <div id="aiChatHistory" style="padding: 1rem; overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column; gap: 0.75rem; min-height: 200px; max-height: 280px;">
+                        <div class="chat-message bot" style="background: var(--surface-default); border: 1px solid var(--border-color); padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; max-width: 85%; align-self: flex-start; line-height: 1.4;">
+                            🇻🇪 <strong>Asistente Virtual SismoVenezuela:</strong><br>
+                            ¡Hola! Puedes escribirme o enviarme un mensaje de voz para actualizar o registrar un centro de acopio.
+                            <br><br>
+                            <em>Ejemplos:</em><br>
+                            • "La Iglesia La Candelaria necesita agua mineral y pañales desechables urgentes, abrimos de 9 a 2."<br>
+                            • "El polideportivo de Chacao ya no tiene capacidad, está colmado."
+                        </div>
+                    </div>
+
+                    <div class="chat-input-bar" style="display: flex; flex-direction: column; border-top: 1px solid var(--border-color); background: var(--surface-default); padding: 0.75rem; gap: 0.5rem;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; width: 100%;">
+                            <input type="text" id="aiChatInput" placeholder="Escribe tu reporte de acopio..." style="flex-grow: 1; min-height: 38px; padding: 0.5rem 0.75rem; font-size: 0.85rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--surface-default); color: var(--text-primary);">
+                            <button type="button" class="btn" id="btnSendAiText" style="padding: 0 1rem; min-height: 38px; font-size: 0.85rem;">Enviar</button>
+                            <button type="button" class="btn btn-secondary" id="btnRecordVoice" style="padding: 0; width: 38px; height: 38px; min-height: 38px; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--color-error); background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2);" title="Grabar nota de voz">
+                                🎙️
+                            </button>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--text-secondary); padding: 0 0.25rem;">
+                            <label style="display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; user-select: none;">
+                                <input type="checkbox" id="chkAttachGPS" checked> Adjuntar mis coordenadas GPS actuales
+                            </label>
+                            <span id="recordingStatus" style="font-weight: 600; color: var(--color-error); display: none; align-items: center; gap: 0.25rem;">
+                                <span class="status-dot" style="width: 8px; height: 8px; background-color: var(--color-error); border-radius: 50%; animation: pulse 1s infinite;"></span> Grabando... (<span id="recordingTimer">0s</span>)
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div class="toast" id="toast" role="alert" aria-live="assertive">
+        <div id="toastMessage">Mensaje informativo</div>
+    </div>
+
+    <!-- MOBILE BOTTOM NAVIGATION (Tab Bar) -->
+    <nav class="mobile-quick-actions" aria-label="Navegación móvil">
+        <a href="/">🚨 Alertas</a>
+        <a href="acopio.html" class="active">📦 Acopio</a>
+        <a href="desaparecidos.html">👤 Buscar</a>
+        <a href="voluntariado.html">🤝 Ayudar</a>
+    </nav>
+
+    <footer class="site-footer">
+        <p>© 2026 SismoVenezuela • Todos los derechos reservados. Desarrollado por voluntarios de la comunidad digital de la Red Quipu.</p>
+    </footer>
+</div>
+
+<!-- Scripts -->
+<script src="support.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
