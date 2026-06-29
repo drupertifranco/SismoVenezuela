@@ -52,15 +52,27 @@ let userMarker = null;
 let leafletLoadPromise = null;
 let centersMapRequested = false;
 
-// Mostrar subformulario dinámico si es desaparecido
-if (typeSelect && missingSubform) {
+// Mostrar subformulario dinámico o aviso de inspección técnica
+const structuralInspectionNotice = document.getElementById('structuralInspectionNotice');
+if (typeSelect) {
     typeSelect.addEventListener('change', () => {
-        if (typeSelect.value === 'desaparecido') {
-            missingSubform.style.display = 'block';
-            document.getElementById('mp_name').setAttribute('required', 'true');
-        } else {
-            missingSubform.style.display = 'none';
-            document.getElementById('mp_name').removeAttribute('required');
+        // Desaparecido
+        if (missingSubform) {
+            if (typeSelect.value === 'desaparecido') {
+                missingSubform.style.display = 'block';
+                document.getElementById('mp_name').setAttribute('required', 'true');
+            } else {
+                missingSubform.style.display = 'none';
+                document.getElementById('mp_name').removeAttribute('required');
+            }
+        }
+        // Inspección Técnica (Grupo Ávila)
+        if (structuralInspectionNotice) {
+            if (typeSelect.value === 'rescate_estructural') {
+                structuralInspectionNotice.style.display = 'block';
+            } else {
+                structuralInspectionNotice.style.display = 'none';
+            }
         }
     });
 }
@@ -1800,6 +1812,28 @@ function initEmergencyPhones() {
 
 // Inicializar teléfonos al cargar
 initEmergencyPhones();
+
+// Directorio de Ingenieros Voluntarios de la UNIMET
+function initUnimetEngineers() {
+    const toggleButtons = document.querySelectorAll('.btn-toggle-engineers');
+    toggleButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const parent = btn.closest('.card');
+            if (!parent) return;
+            const list = parent.querySelector('.unimet-engineers-list');
+            if (!list) return;
+            
+            if (list.style.display === 'none' || list.style.display === '') {
+                list.style.display = 'flex';
+                btn.innerHTML = '📞 Directorio de Ingenieros Aliados (UNIMET) ▴';
+            } else {
+                list.style.display = 'none';
+                btn.innerHTML = '📞 Directorio de Ingenieros Aliados (UNIMET) ▾';
+            }
+        });
+    });
+}
+initUnimetEngineers();
 
 // ========================================================================
 // AI CHAT & VOICE ASSISTANT FOR COLLECTION CENTERS
