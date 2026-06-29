@@ -2229,8 +2229,8 @@ async function processAcopioInputWithGemini({ text, audioBuffer, audioMimeType }
     properties: {
       intent: { 
         type: 'STRING', 
-        enum: ['REGISTER', 'UPDATE'],
-        description: 'REGISTER si el usuario describe un centro nuevo. UPDATE si actualiza insumos, horario o estado de un centro de acopio que ya se conoce o se sobreentiende.'
+        enum: ['REGISTER', 'UPDATE', 'QUERY'],
+        description: 'REGISTER si el usuario describe un centro nuevo. UPDATE si aporta nuevos insumos, horario o estado para actualizar. QUERY si el usuario simplemente hace una pregunta para saber el estado, insumos o disponibilidad de un centro (ej: ¿Qué necesita la Iglesia de la Candelaria? o ¿Está operativo el centro de Chacao?).'
       },
       center_name: { 
         type: 'STRING',
@@ -2276,10 +2276,10 @@ async function processAcopioInputWithGemini({ text, audioBuffer, audioMimeType }
   }
 
   const prompt = text 
-    ? `Analiza el siguiente reporte escrito sobre un centro de acopio/ayuda en Venezuela. Determina si quieren registrar uno nuevo o actualizar uno existente, y extrae los campos estructurados requeridos. Escribe el texto exacto en el campo "transcription".
+    ? `Analiza el siguiente reporte escrito sobre un centro de acopio/ayuda en Venezuela. Determina si quieren registrar uno nuevo (REGISTER), actualizar uno existente (UPDATE), o simplemente consultar información o estado de un centro (QUERY). Extrae los campos estructurados requeridos. Escribe el texto exacto en el campo "transcription".
 Reporte escrito:
 "${text}"`
-    : `Analiza minuciosamente este audio de un centro de acopio/ayuda en Venezuela. Identifica si quieren registrar uno nuevo o actualizar uno existente, transcribe todo el audio textualmente en "transcription", y extrae la información requerida de manera estructurada en español.`;
+    : `Analiza minuciosamente este audio de un centro de acopio/ayuda en Venezuela. Identifica si quieren registrar uno nuevo (REGISTER), actualizar uno existente (UPDATE), o consultar información o estado de un centro (QUERY). Transcribe todo el audio textualmente en "transcription", y extrae la información requerida de manera estructurada en español.`;
 
   contents.push(prompt);
 
@@ -2307,8 +2307,8 @@ async function handleAcopioInput({ text, audioBuffer, audioMimeType, userLat, us
   let matchedCenterId = null;
   let matchedCenterName = null;
 
-  // 2. Si la intención es actualizar (UPDATE), buscar coincidencia
-  if (intent === 'UPDATE' && centerName) {
+  // 2. Si la intención es actualizar (UPDATE) o consultar (QUERY), buscar coincidencia
+  if ((intent === 'UPDATE' || intent === 'QUERY') && centerName) {
     // Buscar primero por cercanía GPS (radio de 500m) si el usuario envió coordenadas
     if (userLat && userLng) {
       const distanceQuery = `
@@ -2345,11 +2345,35 @@ async function handleAcopioInput({ text, audioBuffer, audioMimeType, userLat, us
     }
   }
 
-  // 3. Ejecutar inserción o actualización de manera segura utilizando transacción y configurando el rol
+  // 3. Ejecutar inserción, actualización o consulta de manera segura utilizando transacción y configurando el rol
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await client.query("SET LOCAL app.role = 'authenticated';");
+
+    // Si es una simple consulta (QUERY), no hacemos modificaciones, solo leemos y retornamos
+    if (intent === 'QUERY') {
+      if (matchedCenterId) {
+        const selectRes = await client.query(`SELECT * FROM public.collection_centers WHERE id = $1;`, [matchedCenterId]);
+        await client.query('COMMIT');
+        return {
+          success: true,
+          action: 'QUERY',
+          matched: true,
+          center: selectRes.rows[0],
+          extracted
+        };
+      } else {
+        await client.query('COMMIT');
+        return {
+          success: true,
+          action: 'QUERY',
+          matched: false,
+          center: null,
+          extracted
+        };
+      }
+    }
 
     if (matchedCenterId) {
       const updateFields = [];
@@ -2499,14 +2523,42 @@ function statusEmoji(status) {
 
 function formatAcopioReply(result) {
   const { action, center, extracted } = result;
+
+  const transcriptionText = extracted.transcription 
+    ? `\n\n*Transcripción de tu mensaje:*\n_"${extracted.transcription}"_`
+    : '';
+
+  if (action === 'QUERY') {
+    if (center) {
+      const supplies = center.supplies || '_Ninguno reportado_';
+      const schedule = center.schedule || '_No especificado_';
+      const contact = center.contact_info || '_No especificado_';
+      const statusText = center.capacity_status.replace('_', ' ').toUpperCase();
+
+      return `🔍 *Consulta de Centro de Acopio*
+
+Hemos encontrado la información del centro consultado:
+*📍 Centro:* ${center.name}
+*📍 Dirección:* ${center.location_text}
+*📊 Estado:* ${statusEmoji(center.capacity_status)} ${statusText}
+*📦 Insumos Necesitados:* ${supplies}
+*⏰ Horario:* ${schedule}
+*📞 Contacto:* ${contact}${transcriptionText}
+
+_Los datos corresponden a la información en vivo de SismoVenezuela._`;
+    } else {
+      return `❓ *Centro de Acopio no encontrado*
+
+No logramos identificar ningún centro de acopio activo con el nombre *"${extracted.center_name}"*.
+
+_Si lo deseas, puedes dictarme o escribirme sus datos de dirección e insumos para registrarlo de inmediato._`;
+    }
+  }
+
   const supplies = center.supplies || '_Ninguno reportado_';
   const schedule = center.schedule || '_No especificado_';
   const contact = center.contact_info || '_No especificado_';
   const statusText = center.capacity_status.replace('_', ' ').toUpperCase();
-
-  const transcriptionText = extracted.transcription 
-    ? `\n\n*Transcripción de tu audio:*\n_"${extracted.transcription}"_`
-    : '';
 
   if (action === 'UPDATE') {
     return `✅ *¡Centro de Acopio Actualizado!*
