@@ -2007,8 +2007,6 @@
                         <button type="button" class="btn btn-secondary" id="btnFindNearest" style="margin-top: 0.75rem;">
                             Encontrar centro más cercano
                         </button>
-
-                        <div class="centers-list" id="centersList"></div></div>
                     </div>
                 </div>
 
@@ -2038,6 +2036,9 @@
                         <button type="button" class="chip-filter" data-filter="operativo" style="padding: 0.45rem 1rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">🟢 Operativos</button>
                     </div>
                 </div>
+
+                <!-- LISTA DE RESULTADOS DE CENTROS (Ancho completo debajo del buscador) -->
+                <div class="centers-list" id="centersList" style="margin: 1.25rem 0 1.5rem 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; max-height: 480px; overflow-y: auto; padding-right: 0.25rem;"></div>
 
                 <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 1.5rem 0;">
 
