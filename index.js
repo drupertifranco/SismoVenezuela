@@ -2716,7 +2716,31 @@ app.post('/api/telegram/webhook/:token', express.json(), async (req, res) => {
         const cleanText = text.trim().toLowerCase();
         
         if (cleanText === '/start') {
-          await sendTelegramMessage(chatId, `🇻🇪 *¡Bienvenido al Asistente de SismoVenezuela!* 🇻🇪\n\nEste bot te ayuda a interactuar con el mapa nacional de centros de acopio.\n\n*¿Qué puedes hacer?*\n\n🎙️ *Reportar por voz o texto:* Envíame un mensaje de texto o una nota de voz para registrar un centro nuevo o actualizar las necesidades de uno existente. Gemini procesará la información al instante.\n\n📍 *Centros cercanos:* Comparte tu ubicación actual (usando el menú de adjuntos de Telegram - clip 📎) y te indicaré los **3 centros de acopio más cercanos** a ti.\n\n📊 *Total de centros:* Escribe /total o la palabra "total" para saber cuántos puntos de ayuda tenemos activos.`);
+          await sendTelegramMessage(chatId, `🇻🇪 *SismoVenezuela - Asistente de Emergencia y Acopio* 🇻🇪
+
+¡Hola! Soy tu asistente virtual para la coordinación y consulta de centros de acopio y ayuda humanitaria en Venezuela en tiempo real.
+
+Aquí tienes las instrucciones de cómo puedes interactuar conmigo:
+
+🎙️ *1. Reportar o Registrar por Notas de Voz:*
+Mándame un mensaje de voz contándome qué centro es, dónde queda, qué necesitan y su estado actual. ¡Nuestra IA transcribirá y estructurará todo!
+_Ejemplo:_ "El centro de acopio de la Iglesia La Candelaria necesita agua mineral y pañales desechables urgentes, abrimos de 9 a 2."
+
+✍️ *2. Reportar o Registrar por Mensaje de Texto:*
+Si no puedes hablar, escríbeme un mensaje normal describiendo el centro y sus necesidades de manera clara.
+_Ejemplo:_ "El Colegio Salesiano en Altamira necesita colchonetas y sábanas."
+
+🔍 *3. Consultar el Estado de un Centro:*
+Pregúntame directamente por cualquier centro para saber qué necesita, su horario o si está operativo.
+_Ejemplo:_ "¿Qué necesita la Iglesia de la Candelaria?" o "¿Está operativo el centro de Chacao?"
+
+📍 *4. Encontrar Centros de Acopio más Cercanos:*
+Comparte tu ubicación GPS actual desde el menú de adjuntos de Telegram (icono del clip 📎 -> Ubicación) y te listaré de inmediato los *3 centros más cercanos* a ti con su distancia exacta.
+
+📊 *5. Ver Estadísticas del Sistema:*
+Escribe la palabra *total* o el comando /total para conocer el número total de centros de acopio activos y registrados en el mapa nacional.
+
+_¡Gracias por tu apoyo! Cada reporte ayuda a canalizar la ayuda de forma más eficiente en todo el país._`);
         
         } else if (cleanText === '/total' || cleanText === 'total' || cleanText.includes('cuantos centros') || cleanText.includes('cuántos centros')) {
           await sendTelegramAction(chatId, 'typing');
