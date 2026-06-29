@@ -1968,12 +1968,30 @@
                             Encontrar centro más cercano
                         </button>
                         
-                        <!-- BUSCADOR DE CENTROS DE ACOPIO -->
-                        <div class="form-group" style="margin-top: 1rem; margin-bottom: 0.75rem;">
-                            <label for="centerSearchInput" style="font-weight: 600; display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem;">
-                                🔍 Buscar Centro de Acopio
+                        <!-- BUSCADOR DE ACOPIO PREMIUM -->
+                        <div class="search-panel-container" style="margin-top: 1.25rem; margin-bottom: 1rem; padding: 1rem; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px;">
+                            
+                            <label for="centerSearchInput" style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between; color: var(--text-primary);">
+                                <span style="display: flex; align-items: center; gap: 0.35rem;">🔍 Buscador Inteligente de Acopio</span>
+                                <span id="searchResultCount" style="font-size: 0.75rem; font-weight: 500; color: var(--text-secondary);">Cargando...</span>
                             </label>
-                            <input type="text" id="centerSearchInput" placeholder="Escribe el nombre o ubicación del centro..." style="min-height: 38px; padding: 0.5rem 0.75rem; font-size: 0.85rem;" />
+                            
+                            <div class="search-input-wrapper" style="position: relative; display: flex; align-items: center; width: 100%;">
+                                <input type="text" id="centerSearchInput" placeholder="Busca por nombre, insumo, dirección..." style="width: 100%; min-height: 44px; padding: 0.5rem 2.5rem 0.5rem 1rem; font-size: 0.9rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--surface-muted); color: var(--text-primary); transition: border-color 0.2s;" />
+                                
+                                <button id="btnClearSearch" type="button" style="position: absolute; right: 10px; background: none; border: none; color: var(--text-secondary); font-size: 1.1rem; cursor: pointer; display: none; padding: 0.25rem; line-height: 1;">
+                                    ✕
+                                </button>
+                            </div>
+
+                            <!-- Chips de Filtro Rápido -->
+                            <div class="filter-chips-container" style="display: flex; gap: 0.5rem; margin-top: 0.75rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-width: none; -ms-overflow-style: none;">
+                                <button type="button" class="chip-filter active" data-filter="all" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-primary); cursor: pointer; white-space: nowrap; font-weight: 600; transition: all 0.2s;">Todos</button>
+                                <button type="button" class="chip-filter" data-filter="agua" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">💧 Agua</button>
+                                <button type="button" class="chip-filter" data-filter="alimentos" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">🥫 Alimentos</button>
+                                <button type="button" class="chip-filter" data-filter="medicinas" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">💊 Medicinas</button>
+                                <button type="button" class="chip-filter" data-filter="operativo" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; border-radius: 99px; border: 1px solid var(--border-color); background: var(--surface-default); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 0.2s;">🟢 Operativos</button>
+                            </div>
                         </div>
 
                         <div class="centers-list" id="centersList"></div>
@@ -2261,6 +2279,7 @@
     let currentFilter = 'all';
     let collectionCenters = [];
     let centerSearchQuery = '';
+    let activeCenterChipFilter = 'all';
     let allLoadedReports = [];
     let incidentsSearchQuery = '';
     let userPosition = null;
@@ -2366,10 +2385,47 @@
     });
 
     const centerSearchInput = document.getElementById('centerSearchInput');
-    centerSearchInput.addEventListener('input', () => {
-        centerSearchQuery = centerSearchInput.value;
-        renderCollectionCenters();
-    });
+    const btnClearSearch = document.getElementById('btnClearSearch');
+    const chipFilters = document.querySelectorAll('.chip-filter');
+
+    if (chipFilters.length > 0) {
+        chipFilters.forEach(chip => {
+            chip.addEventListener('click', () => {
+                chipFilters.forEach(c => {
+                    c.classList.remove('active');
+                    c.style.background = 'var(--surface-default)';
+                    c.style.color = 'var(--text-secondary)';
+                    c.style.fontWeight = 'normal';
+                });
+                chip.classList.add('active');
+                chip.style.background = 'var(--surface-muted)';
+                chip.style.color = 'var(--text-primary)';
+                chip.style.fontWeight = '600';
+                
+                activeCenterChipFilter = chip.getAttribute('data-filter');
+                renderCollectionCenters();
+            });
+        });
+    }
+
+    if (centerSearchInput) {
+        centerSearchInput.addEventListener('input', () => {
+            centerSearchQuery = centerSearchInput.value;
+            if (btnClearSearch) {
+                btnClearSearch.style.display = centerSearchQuery ? 'block' : 'none';
+            }
+            renderCollectionCenters();
+        });
+    }
+
+    if (btnClearSearch) {
+        btnClearSearch.addEventListener('click', () => {
+            centerSearchInput.value = '';
+            centerSearchQuery = '';
+            btnClearSearch.style.display = 'none';
+            renderCollectionCenters();
+        });
+    }
 
     const incidentsSearchInput = document.getElementById('incidentsSearchInput');
     incidentsSearchInput.addEventListener('input', () => {
@@ -2683,21 +2739,60 @@
         }
     }
 
+    function getFilteredCenters(sourceList) {
+        const sortedList = sourceList || collectionCenters;
+        const query = (centerSearchQuery || '').trim().toLowerCase();
+        
+        let filtered = query
+            ? sortedList.filter(c => 
+                (c.name || '').toLowerCase().includes(query) || 
+                (c.location_text || '').toLowerCase().includes(query) ||
+                (c.supplies || '').toLowerCase().includes(query)
+              )
+            : sortedList;
+
+        if (activeCenterChipFilter !== 'all') {
+            if (activeCenterChipFilter === 'operativo') {
+                filtered = filtered.filter(c => c.capacity_status === 'operativo');
+            } else if (activeCenterChipFilter === 'agua') {
+                filtered = filtered.filter(c => 
+                    (c.supplies || '').toLowerCase().includes('agua') || 
+                    (c.supplies || '').toLowerCase().includes('líquido') ||
+                    (c.supplies || '').toLowerCase().includes('hidratación')
+                );
+            } else if (activeCenterChipFilter === 'alimentos') {
+                filtered = filtered.filter(c => 
+                    (c.supplies || '').toLowerCase().includes('comida') || 
+                    (c.supplies || '').toLowerCase().includes('alimento') ||
+                    (c.supplies || '').toLowerCase().includes('enlatado')
+                );
+            } else if (activeCenterChipFilter === 'medicinas') {
+                filtered = filtered.filter(c => 
+                    (c.supplies || '').toLowerCase().includes('medicina') || 
+                    (c.supplies || '').toLowerCase().includes('fármaco') ||
+                    (c.supplies || '').toLowerCase().includes('gasas') ||
+                    (c.supplies || '').toLowerCase().includes('suero')
+                );
+            }
+        }
+        return filtered;
+    }
+
     function renderCollectionCenters() {
         const sortedCenters = getCentersWithDistance();
         const nearest = getNearestCenter();
+        const filteredCenters = getFilteredCenters(sortedCenters);
 
-        const query = (centerSearchQuery || '').trim().toLowerCase();
-        const filteredCenters = query
-            ? sortedCenters.filter(c => 
-                (c.name || '').toLowerCase().includes(query) || 
-                (c.location_text || '').toLowerCase().includes(query)
-              )
-            : sortedCenters;
+        // Actualizar contador del buscador premium
+        const searchResultCount = document.getElementById('searchResultCount');
+        if (searchResultCount) {
+            searchResultCount.textContent = `Mostrando ${filteredCenters.length} de ${collectionCenters.length}`;
+        }
 
-        centersCount.textContent = query 
+        centersCount.textContent = centerSearchQuery || activeCenterChipFilter !== 'all'
             ? `${filteredCenters.length} filtrados` 
             : `${collectionCenters.length} activos`;
+        
         heroCentersCount.textContent = collectionCenters.length;
         updateCenterMarkers();
         updateNearestPanel(nearest);
@@ -2705,7 +2800,7 @@
         if (filteredCenters.length === 0) {
             centersList.innerHTML = `
                 <div style="padding: 1rem; color: var(--text-secondary); border: 1px dashed var(--border-color); border-radius: 8px;">
-                    ${query ? 'No se encontraron centros que coincidan con la búsqueda.' : 'Aún no hay centros de acopio registrados.'}
+                    No se encontraron centros que coincidan con los filtros de búsqueda.
                 </div>
             `;
             return;
@@ -2744,13 +2839,7 @@
         centersLayer.clearLayers();
         const bounds = [];
 
-        const query = (centerSearchQuery || '').trim().toLowerCase();
-        const filteredForMarkers = query
-            ? collectionCenters.filter(c => 
-                (c.name || '').toLowerCase().includes(query) || 
-                (c.location_text || '').toLowerCase().includes(query)
-              )
-            : collectionCenters;
+        const filteredForMarkers = getFilteredCenters(collectionCenters);
 
         filteredForMarkers.forEach(center => {
             const lat = Number(center.lat);

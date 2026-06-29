@@ -2592,8 +2592,45 @@ app.post('/api/telegram/webhook/:token', express.json(), async (req, res) => {
       const chatId = update.message.chat.id;
       const text = update.message.text;
       const voice = update.message.voice;
+      const location = update.message.location;
 
-      if (voice) {
+      if (location) {
+        await sendTelegramAction(chatId, 'typing');
+        const { latitude, longitude } = location;
+        console.log(`[Telegram Bot] Recibida ubicación GPS del usuario (${latitude}, ${longitude})`);
+
+        // Consultar los 3 centros de acopio más cercanos
+        const distanceQuery = `
+          SELECT name, location_text, supplies, capacity_status,
+                 (6371000 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) + sin(radians($3)) * sin(radians(lat)))) AS distance
+          FROM public.collection_centers
+          WHERE is_active = true
+          ORDER BY distance ASC
+          LIMIT 3;
+        `;
+        const distResult = await pool.query(distanceQuery, [latitude, longitude, latitude]);
+
+        let replyText = `📍 *Centros de acopio más cercanos a ti:*\n\n`;
+        if (distResult.rows.length === 0) {
+          replyText += `_No se encontraron centros de acopio activos en el sistema._`;
+        } else {
+          distResult.rows.forEach((row, i) => {
+            const distKm = (row.distance / 1000).toFixed(2);
+            const distText = row.distance < 1000 ? `${row.distance.toFixed(0)}m` : `${distKm}km`;
+            const supplies = row.supplies || '_Ninguno reportado_';
+            const numEmoji = ['1️⃣', '2️⃣', '3️⃣'][i] || '📍';
+            
+            replyText += `${numEmoji} *${row.name}* (a ${distText})\n`;
+            replyText += `*📍 Dirección:* ${row.location_text}\n`;
+            replyText += `*📦 Insumos:* ${supplies}\n`;
+            replyText += `*📊 Estado:* ${statusEmoji(row.capacity_status)} ${row.capacity_status.replace('_', ' ').toUpperCase()}\n\n`;
+          });
+          replyText += `_Los datos del mapa de emergencia ya se encuentran sincronizados._`;
+        }
+
+        await sendTelegramMessage(chatId, replyText);
+
+      } else if (voice) {
         await sendTelegramAction(chatId, 'record_voice');
         const fileId = voice.file_id;
         console.log(`[Telegram Bot] Recibida nota de voz (file_id: ${fileId})`);
@@ -2610,8 +2647,17 @@ app.post('/api/telegram/webhook/:token', express.json(), async (req, res) => {
         await sendTelegramMessage(chatId, reply);
 
       } else if (text) {
-        if (text === '/start') {
-          await sendTelegramMessage(chatId, `🇻🇪 *¡Bienvenido al Asistente de SismoVenezuela!* 🇻🇪\n\nEste bot te ayuda a registrar o actualizar las necesidades de los centros de acopio en tiempo real.\n\n*¿Cómo puedes reportar?*\n1. Envíame una **nota de voz** (audio) 🎙️. Cuéntame qué centro de acopio es, dónde queda, qué necesitan, su horario y estado.\n2. O envíame un **mensaje escrito** normal con la descripción.\n\n_Ejemplo:_ "El centro de acopio del Colegio Salesiano en Altamira necesita pañales y sueros, atendemos de 9am a 5pm."`);
+        const cleanText = text.trim().toLowerCase();
+        
+        if (cleanText === '/start') {
+          await sendTelegramMessage(chatId, `🇻🇪 *¡Bienvenido al Asistente de SismoVenezuela!* 🇻🇪\n\nEste bot te ayuda a interactuar con el mapa nacional de centros de acopio.\n\n*¿Qué puedes hacer?*\n\n🎙️ *Reportar por voz o texto:* Envíame un mensaje de texto o una nota de voz para registrar un centro nuevo o actualizar las necesidades de uno existente. Gemini procesará la información al instante.\n\n📍 *Centros cercanos:* Comparte tu ubicación actual (usando el menú de adjuntos de Telegram - clip 📎) y te indicaré los **3 centros de acopio más cercanos** a ti.\n\n📊 *Total de centros:* Escribe /total o la palabra "total" para saber cuántos puntos de ayuda tenemos activos.`);
+        
+        } else if (cleanText === '/total' || cleanText === 'total' || cleanText.includes('cuantos centros') || cleanText.includes('cuántos centros')) {
+          await sendTelegramAction(chatId, 'typing');
+          const countResult = await pool.query(`SELECT COUNT(*) FROM public.collection_centers WHERE is_active = true;`);
+          const totalCount = countResult.rows[0].count;
+          await sendTelegramMessage(chatId, `📊 *SismoVenezuela - Reporte del Sistema:*\n\nActualmente hay *${totalCount}* centros de acopio activos y georreferenciados en el mapa de ayuda de SismoVenezuela.\n\n_Puedes compartir tu ubicación GPS desde el menú de adjuntos de Telegram (clip 📎) para ver los 3 centros más cercanos a ti._`);
+        
         } else {
           await sendTelegramAction(chatId, 'typing');
           const result = await handleAcopioInput({ text });
