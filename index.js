@@ -1822,6 +1822,82 @@ $func$;
   }
 });
 
+app.get('/api/admin/insert-temp-centers', async (req, res) => {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) return res.status(500).send('DATABASE_URL no definida.');
+  const pgPool = new pg.Pool({ connectionString });
+  let client;
+  try {
+    client = await pgPool.connect();
+    await client.query('BEGIN;');
+    await client.query("SET LOCAL app.role = 'authenticated';");
+
+    // 0. Clean old records to ensure idempotency
+    await client.query("DELETE FROM public.collection_centers WHERE name IN ($1, $2, $3);", [
+      "Centro de Estudiantes de Farmacia / UCV (Centro de Acopio UCV)",
+      "Acopio de Herramientas - UCAB (La Guaira)",
+      "Centro de Acopio de Médicos Veterinarios (Miranda / La Floresta)"
+    ]);
+
+    // 1. Insert UCV
+    await client.query(`
+      INSERT INTO public.collection_centers (name, location_text, lat, lng, supplies, schedule, contact_info, capacity_status, is_active)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+    `, [
+      "Centro de Estudiantes de Farmacia / UCV (Centro de Acopio UCV)",
+      "FCU de la Universidad Central de Venezuela (UCV), Caracas",
+      10.4906,
+      -66.8920,
+      "Dipirona, Dexametasona, Omeprazol, Adrenalina, Ceftriaxona, Cefepime, Cefazolina, Ceftazidima, Ciprofloxacina, Ampicilina/Sulbactam, Vitamina K, Ácido Tranexámico, Heparina, Ketoprofeno (todo en ampollas); Metronidazol (sol. inyectable), Enoxaparina (jeringas prellenadas), Sulfadiazina de plata (crema), Sales de rehidratación oral (polvo)",
+      "Prioridad médica - Medicamentos no vencidos ni abiertos",
+      "Llevar a la FCU de la UCV",
+      "operativo",
+      true
+    ]);
+
+    // 2. Insert UCAB
+    await client.query(`
+      INSERT INTO public.collection_centers (name, location_text, lat, lng, supplies, schedule, contact_info, capacity_status, is_active)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+    `, [
+      "Acopio de Herramientas - UCAB (La Guaira)",
+      "Universidad Católica Andrés Bello (UCAB), Montalbán, Caracas (Coordinación para La Guaira)",
+      10.4636,
+      -66.9758,
+      "Martillos, Mandarrias, Palas, Picos, Carretillas, Barras de palanca, Sierras manuales, Botiquines, Linternas/pilas, Guantes de trabajo, Agua potable, Cuerdas, Cinceles, Cascos de seguridad",
+      "Viernes 27 de junio de 2026, 8:00 am - 12:00 pm",
+      "Raymond Arteaga (0424-141-3488)",
+      "operativo",
+      true
+    ]);
+
+    // 3. Insert Veterinarios Miranda
+    await client.query(`
+      INSERT INTO public.collection_centers (name, location_text, lat, lng, supplies, schedule, contact_info, capacity_status, is_active)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+    `, [
+      "Centro de Acopio de Médicos Veterinarios (Miranda / La Floresta)",
+      "Av. José Félix Sosa, Chacao, Miranda, 1060 (Quinta La Tere / La Floresta)",
+      10.4957,
+      -66.8488,
+      "Carpas o toldos, toallas, cobijas o almohadas, colchones, colchonetas, ropa y suéteres, equipos médicos, medicinas veterinarias, comida para animales (insumos para mascotas y humanos)",
+      "De 9:00 am a 5:00 pm",
+      "Colegio de Veterinarios de Miranda / Quinta La Tere",
+      "operativo",
+      true
+    ]);
+
+    await client.query('COMMIT;');
+    return res.status(200).send('Centros temporales insertados exitosamente.');
+  } catch (err) {
+    if (client) await client.query('ROLLBACK;');
+    return res.status(500).send(err.message);
+  } finally {
+    if (client) client.release();
+    await pgPool.end();
+  }
+});
+
 // Endpoint para forzar la limpieza de registros importados con prefijo hosp_mpc
 app.get('/api/admin/debug-db', async (req, res) => {
   const connectionString = process.env.DATABASE_URL;
